@@ -18,7 +18,7 @@ export class WSWatcher {
     this.routes.set(path, handler);
   }
 
-  getHandler(path: string) {
+  get_handler(path: string) {
     return this.routes.get(path);
   }
 }

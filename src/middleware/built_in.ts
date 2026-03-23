@@ -1,4 +1,5 @@
 import type { MiddlewareFn } from "../types";
+import { parse_url_path } from "../utils/parse_url";
 
 export function cors(
   options: {
@@ -13,7 +14,7 @@ export function cors(
 
   const methods = Array.isArray(options.methods)
     ? options.methods.join(",")
-    : options.methods ?? "GET,POST,PUT,PATCH,DELETE,OPTIONS";
+    : options.methods ?? "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS";
 
   return async (req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", origin);
@@ -130,5 +131,28 @@ export function json(options: { limit?: number | string } = {}): MiddlewareFn {
     }
 
     await next();
+  };
+}
+
+export function logger(
+  options: {
+    writer?: (message: string) => void;
+  } = {}
+): MiddlewareFn {
+  const writer = typeof options.writer === "function" ? options.writer : console.log;
+
+  return async (req, res, next) => {
+    const start = performance.now();
+
+    try {
+      await next();
+    } finally {
+      const end = performance.now();
+      writer(
+        `${req.method()} ${parse_url_path(req.url())} ${res.getStatus()} (${(
+          end - start
+        ).toFixed(2)}ms)`
+      );
+    }
   };
 }

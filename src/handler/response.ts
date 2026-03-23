@@ -1,5 +1,5 @@
 import { readFile } from "fs/promises";
-import { join } from "path";
+import { resolve, sep } from "path";
 import type { PageCompression } from "../types";
 
 const page_cache = new Map<string, string>();
@@ -12,8 +12,45 @@ export class OxarionResponse {
   constructor(
     private readonly pages_dir_name: string,
     private readonly cache_pages: boolean,
-    private readonly _req: Request
+    private readonly _req: Request,
   ) {}
+
+  static json(obj: unknown, init: ResponseInit = {}) {
+    const headers = new Headers(init.headers);
+    headers.set("Content-Type", "application/json");
+    return new Response(JSON.stringify(obj), { ...init, headers });
+  }
+
+  static text(body: string, init: ResponseInit = {}) {
+    const headers = new Headers(init.headers);
+    headers.set("Content-Type", "text/plain; charset=utf-8");
+    return new Response(body, { ...init, headers });
+  }
+
+  static html(body: string, init: ResponseInit = {}) {
+    const headers = new Headers(init.headers);
+    headers.set("Content-Type", "text/html; charset=utf-8");
+    return new Response(body, { ...init, headers });
+  }
+
+  static redirect(url: string, status = 302) {
+    if (typeof url !== "string")
+      throw new TypeError("[Oxarion] redirect: url must be a string");
+    if (
+      typeof status !== "number" ||
+      !Number.isInteger(status) ||
+      status < 300 ||
+      status > 399
+    )
+      throw new TypeError(
+        "[Oxarion] redirect: status must be an integer between 300 and 399",
+      );
+
+    return new Response(null, {
+      status,
+      headers: { Location: url },
+    });
+  }
 
   /**
    * Sets the HTTP status code for the response.
@@ -28,7 +65,7 @@ export class OxarionResponse {
       code > 599
     )
       throw new TypeError(
-        "[Oxarion] setStatus: code must be an integer between 100 and 599"
+        "[Oxarion] setStatus: code must be an integer between 100 and 599",
       );
 
     this._status = code;
@@ -61,7 +98,7 @@ export class OxarionResponse {
       Array.isArray(headers)
     )
       throw new TypeError(
-        "[Oxarion] setHeaders: headers must be a plain object"
+        "[Oxarion] setHeaders: headers must be a plain object",
       );
 
     const entries = Object.entries(headers);
@@ -70,7 +107,7 @@ export class OxarionResponse {
       const [k, v] = entries[i];
       if (typeof k !== "string" || typeof v !== "string") {
         throw new TypeError(
-          "[Oxarion] setHeaders: all keys and values must be strings"
+          "[Oxarion] setHeaders: all keys and values must be strings",
         );
       }
       this._headers.set(k, v);
@@ -92,7 +129,7 @@ export class OxarionResponse {
       !(typeof ReadableStream !== "undefined" && body instanceof ReadableStream)
     )
       throw new TypeError(
-        "[Oxarion] send: body must be a string, ArrayBuffer, Uint8Array, Blob, or ReadableStream"
+        "[Oxarion] send: body must be a string, ArrayBuffer, Uint8Array, Blob, or ReadableStream",
       );
 
     this._body = body;
@@ -126,7 +163,7 @@ export class OxarionResponse {
       status > 399
     )
       throw new TypeError(
-        "[Oxarion] redirect: status must be an integer between 300 and 399"
+        "[Oxarion] redirect: status must be an integer between 300 and 399",
       );
 
     this._status = status;
@@ -166,7 +203,7 @@ export class OxarionResponse {
    */
   async sendPage(
     filePath: string,
-    compression?: PageCompression
+    compression?: PageCompression,
   ): Promise<PageSendController | undefined> {
     if (typeof filePath !== "string")
       throw new TypeError("[Oxarion] sendPage: filePath must be a string");
@@ -175,14 +212,19 @@ export class OxarionResponse {
       (typeof compression !== "object" || compression === null)
     )
       throw new TypeError(
-        "[Oxarion] sendPage: compression must be an object if provided"
+        "[Oxarion] sendPage: compression must be an object if provided",
       );
 
-    const full_path = join(
-      process.cwd(),
-      this.pages_dir_name,
-      filePath.endsWith(".html") ? filePath : filePath + ".html"
-    );
+    const pages_root = resolve(process.cwd(), this.pages_dir_name);
+    const page_path = filePath.endsWith(".html") ? filePath : filePath + ".html";
+    const full_path = resolve(pages_root, page_path);
+    const inside_pages_root =
+      full_path === pages_root || full_path.startsWith(pages_root + sep);
+
+    if (!inside_pages_root) {
+      this.setStatus(403).send("Forbidden: Page path is outside pages directory.");
+      return;
+    }
 
     let html = page_cache.get(full_path);
 
@@ -192,7 +234,7 @@ export class OxarionResponse {
         if (this.cache_pages) page_cache.set(full_path, html);
       } catch {
         this.setStatus(404).send(
-          "Page Mismatch: The requested page does not match any available pages."
+          "Page Mismatch: The requested page does not match any available pages.",
         );
         return;
       }
@@ -201,7 +243,7 @@ export class OxarionResponse {
       return new PageSendController(
         this.setHeader("Content-Type", "text/html").send(html),
         full_path,
-        html
+        html,
       );
 
     const acc_encoding = this._req?.headers.get("accept-encoding") || "";
@@ -212,7 +254,8 @@ export class OxarionResponse {
 
     if (use_gzip) {
       const { type, ...opts } = compression;
-      const press = Bun.gzipSync(Buffer.from(html), opts);
+      const press = Buffer.from(Bun.gzipSync(Buffer.from(html), opts));
+
       return new PageSendController(
         this.setHeaders({
           "Content-Type": "text/html",
@@ -220,11 +263,12 @@ export class OxarionResponse {
           Vary: "Accept-Encoding",
         }).send(press),
         full_path,
-        html
+        html,
       );
     } else if (use_zstd) {
       const { type, ...opts } = compression;
-      const press = Bun.zstdCompressSync(Buffer.from(html), opts);
+      const press = Buffer.from(Bun.zstdCompressSync(Buffer.from(html), opts));
+
       return new PageSendController(
         this.setHeaders({
           "Content-Type": "text/html",
@@ -232,14 +276,14 @@ export class OxarionResponse {
           Vary: "Accept-Encoding",
         }).send(press),
         full_path,
-        html
+        html,
       );
     }
 
     return new PageSendController(
       this.setHeader("Content-Type", "text/html").send(html),
       full_path,
-      html
+      html,
     );
   }
 
@@ -254,17 +298,29 @@ export class OxarionResponse {
       throw new TypeError("[Oxarion] sendFile: path must be a string");
     if (contentType !== undefined && typeof contentType !== "string")
       throw new TypeError(
-        "[Oxarion] sendFile: contentType must be a string if provided"
+        "[Oxarion] sendFile: contentType must be a string if provided",
       );
 
     try {
-      const full_path = join(process.cwd(), path);
+      const project_root = resolve(process.cwd());
+      const full_path = resolve(project_root, path);
+      const inside_project_root =
+        full_path === project_root || full_path.startsWith(project_root + sep);
+
+      if (!inside_project_root) {
+        this.setStatus(403).send("Forbidden: File path is outside project directory.");
+        return this;
+      }
+
       const data = await readFile(full_path);
+
       if (contentType) this.setHeader("Content-Type", contentType);
-      this.send(data);
+
+      const body = Uint8Array.from(data);
+      this.send(new Blob([body]));
     } catch {
       this.setStatus(404).send(
-        "File Mismatch: The requested file does not match any available files."
+        "File Mismatch: The requested file does not match any available files.",
       );
     }
     return this;
@@ -289,7 +345,7 @@ class PageSendController {
   constructor(
     private readonly res: OxarionResponse,
     private readonly path: string,
-    private readonly html: string | null
+    private readonly html: string | null,
   ) {}
 
   /**

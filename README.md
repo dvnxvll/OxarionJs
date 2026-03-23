@@ -1,101 +1,99 @@
-# OxarionJS 🚀
+# OxarionJs
 
 ![npm downloads](https://img.shields.io/npm/dm/oxarionjs?style=flat-square&logo=npm&color=blue)
 
-**OxarionJS** is a powerful, modern, and lightweight backend framework built on top of [Bun](https://bun.sh), designed for speed, simplicity, and full TypeScript support.
+OxarionJs is a backend framework on top of Bun with a TypeScript first API
 
----
+## Why OxarionJs
 
-## ⚡ Why OxarionJS?
+- Fast runtime on Bun
+- Type safe route params
+- Route groups and middleware chain support
+- File based dynamic routing with `api.ts` and `api.js`
+- Request and response helper API
+- Native WebSocket route integration
+- Test friendly workflow with Bun
 
-- **Ultra Fast**: Built on Bun for maximum performance.
-- **Lightweight**: Tiny footprint, just 48kb for the core modules.
-- **TypeScript First**: Enjoy full type safety and modern development experience.
-- **Expressive Routing**: Dynamic routes with parameters (`/user/[id]`, `/api/[...path]`).
-- **Built-in Middleware**: CORS, JSON, URL-encoded, and more out of the box.
-- **WebSocket Support**: Native, per-route WebSocket handlers.
-- **Form Data & File Uploads**: Effortless form parsing and file handling.
-- **Gzip Compression**: Automatic response compression.
-- **Static File Serving**: Serve HTML and static assets with ease.
-- **Bun Test Integration**: Write and run tests using Bun's test runner.
-
----
-
-## 🚀 Getting Started
-
-### 1. Prerequisite: Install Bun
-
-OxarionJS requires [Bun](https://bun.sh) (v1.2.19 or higher).
-If you don't have Bun installed, get it from [https://bun.sh](https://bun.sh).
-
-### 2. Install OxarionJS
+## Install
 
 ```bash
 bun add oxarionjs
 ```
 
-### 3. Create Your First Server
+## Quick Start
 
-```typescript
-import Oxarion, { Middleware } from "oxarionjs";
+```ts
+import Oxarion, { Middleware } from "oxarionjs"
 
-// Start the server
-Oxarion.start({
+await Oxarion.start({
+  host: "127.0.0.1",
   port: 3000,
-  debugRoutes: true,
-
-  // Define your routes
   httpHandler: (router) => {
-    router.addHandler("GET", "/", (_, res) => {
-      res.json({ message: "Welcome to Oxarion!" });
-    });
+    router.addHandler("GET", "/", (_req, res) => {
+      res.json({ message: "Welcome" })
+    })
   },
-
-  // This function is called after httpHandler is registered
   safeMwRegister: (router) => {
-    router.middlewareChain(
-      "/",
-      [Middleware.cors(), Middleware.json(), Middleware.urlencoded()],
-      true // This means it will be applied to all routes
-    );
+    router.multiMiddleware("/", [Middleware.cors(), Middleware.logger()], true)
   },
-});
+})
 ```
 
-### 4. Run Your Server
+Run
 
 ```bash
-bun run <your-entry-file>.ts
+bun run src/index.ts
 ```
 
-Replace `<your-entry-file>.ts` with the name of your main TypeScript file.
+## Dynamic Routing
 
----
+```ts
+import Oxarion, { OxarionResponse } from "oxarionjs"
 
-## 📝 Features Overview
+await Oxarion.start({
+  dynamicRouting: {
+    dir: "dyn",
+    handlerFile: "api",
+    extensions: ["ts", "js"],
+    onConflict: "keepManual",
+  },
+  httpHandler: () => {},
+})
+```
 
-- **Routing**: Dynamic, parameterized, and nested routes.
-- **Middleware**: Plug-and-play CORS, JSON, URL-encoded, and custom middleware.
-- **WebSocket**: Built-in, per-route WebSocket support.
-- **Form Data**: Simple form parsing and file upload handling.
-- **Compression**: Automatic gzip compression for responses.
-- **Static Files**: Serve static files and HTML pages effortlessly.
-- **Testing**: Integrated with Bun's test runner for robust testing.
+`dyn/test/api.ts` maps to `/test`
+Route modules can export functions (`GET`, `POST`) or a static class
 
----
+```ts
+// dyn/test/api.ts
+import {
+  OxarionResponse,
+  type OxarionRequest,
+} from "oxarionjs"
 
-## 📦 Requirements
+export default class TestApi {
+  static async GET(
+    req: OxarionRequest,
+    _res: OxarionResponse
+  ) {
+    return OxarionResponse.json({ path: req.url() })
+  }
+}
+```
 
-- **Bun**: v1.2.19 or higher
-  [Install Bun →](https://bun.sh)
+## Docs
 
----
+- [Docs Index](./docs/index.md)
+- [Getting Started](./docs/getting_started.md)
+- [Server Options](./docs/server_options.md)
+- [Routing](./docs/routing.md)
+- [Dynamic Routing](./docs/dynamic_routing.md)
+- [Middleware](./docs/middleware.md)
+- [Request And Response](./docs/request_and_response.md)
+- [WebSocket](./docs/websocket.md)
+- [Api Reference](./docs/api_reference.md)
+- [Testing And Benchmarking](./docs/testing_and_benchmarking.md)
 
-## 📄 License
+## License
 
 [MIT](./LICENSE)
-
----
-
-> **Need help or want to contribute?**
-> Check out the [issues](https://github.com/VoxlD/OxarionJs/issues) or open a pull request!

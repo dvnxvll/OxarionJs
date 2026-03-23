@@ -4,12 +4,52 @@ import type { OxarionResponse } from "./handler/response";
 import { Router } from "./route/router";
 import type { WSWatcher } from "./handler/ws";
 
-export type Method = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "OPTIONS";
+export type Method =
+  | "GET"
+  | "POST"
+  | "PUT"
+  | "DELETE"
+  | "PATCH"
+  | "OPTIONS"
+  | "HEAD";
 
 export type Handler = (
   req: OxarionRequest<any>,
   res: OxarionResponse
-) => void | Promise<void>;
+) => HandlerResult | Promise<HandlerResult>;
+
+export type HandlerResult = void | Response;
+
+export type DynamicRouteParams = Record<
+  string,
+  string | string[] | undefined
+>;
+
+export type DynamicRouteHandler<
+  TParams extends DynamicRouteParams = DynamicRouteParams,
+> = (
+  req: OxarionRequest<TParams>,
+  res: OxarionResponse
+) => HandlerResult | Promise<HandlerResult>;
+
+export type DynamicRouteExportMap = Partial<
+  Record<Method, DynamicRouteHandler<any>>
+>;
+
+export type DynamicRouteClass = {
+  new (...args: any[]): unknown;
+} & DynamicRouteExportMap;
+
+export type DynamicRouteModule = DynamicRouteExportMap & {
+  default?: DynamicRouteClass;
+  [key: string]: unknown;
+};
+
+export type ErrorHandler = (
+  error: unknown,
+  req: OxarionRequest<any>,
+  res: OxarionResponse
+) => HandlerResult | Promise<HandlerResult>;
 
 export interface Route {
   method: Method;
@@ -77,7 +117,7 @@ export interface OxarionOptions {
 
   /**
    * Function to safely register middleware on the router.
-   * Receives a MiddlewareRegister object with middleware and middlewareChain methods.
+   * Receives a MiddlewareRegister object with middleware and multiMiddleware methods.
    */
   safeMwRegister?: (router: MiddlewareRegister) => void;
 
@@ -102,6 +142,21 @@ export interface OxarionOptions {
   cachePages?: boolean;
 
   /**
+   * Auto-register route modules from a directory.
+   */
+  dynamicRouting?: DynamicRoutingOptions;
+
+  /**
+   * Custom handler for requests that do not match any route.
+   */
+  notFoundHandler?: Handler;
+
+  /**
+   * Global error handler for route and notFound handler errors.
+   */
+  errorHandler?: ErrorHandler;
+
+  /**
    * Function to register WebSocket route handlers.
    * Receives the WSWatcher instance for per-route WebSocket handling.
    */
@@ -112,13 +167,14 @@ export interface OxarionRouter {
   addHandler: Router["addHandler"];
   injectWrapper: Router["injectWrapper"];
   middleware: Router["middleware"];
-  middlewareChain: Router["middlewareChain"];
+  multiMiddleware: Router["multiMiddleware"];
   switchToWs: Router["switchToWs"];
+  group: Router["group"];
 }
 
 export interface MiddlewareRegister {
   middleware: Router["middleware"];
-  middlewareChain: Router["middlewareChain"];
+  multiMiddleware: Router["multiMiddleware"];
 }
 
 export type PageCompression =
@@ -221,8 +277,40 @@ export type PageCompression =
 export type MiddlewareFn = (
   req: OxarionRequest<any>,
   res: OxarionResponse,
-  next: () => Promise<void>
+  next: () => Promise<HandlerResult>
 ) => void | Promise<void>;
+
+export interface DynamicRoutingOptions {
+  /**
+   * Enables dynamic route registration.
+   * @default true
+   */
+  enabled?: boolean;
+
+  /**
+   * Directory that contains route folders.
+   * @example "dyn"
+   */
+  dir: string;
+
+  /**
+   * Handler file name without extension.
+   * @default "api"
+   */
+  handlerFile?: string;
+
+  /**
+   * Allowed handler file extensions.
+   * @default ["ts", "js"]
+   */
+  extensions?: string[];
+
+  /**
+   * Conflict strategy when manual and dynamic routes match.
+   * @default "keepManual"
+   */
+  onConflict?: "error" | "override" | "keepManual";
+}
 
 export type ExtractRouteParams<Path extends string> =
   Path extends `${infer _Start}/[...${infer Catch}]`
@@ -255,17 +343,17 @@ export interface WSContext {
 declare module "bun" {
   interface ServeOptions {
     websocket?: {
-      open?: (ws: ServerWebSocket<unknown>) => void;
+      open?: (ws: ServerWebSocket<WSContext>) => void;
       message?: (
-        ws: ServerWebSocket<unknown>,
+        ws: ServerWebSocket<WSContext>,
         message: string | Uint8Array
       ) => void;
       close?: (
-        ws: ServerWebSocket<unknown>,
+        ws: ServerWebSocket<WSContext>,
         code: number,
         reason: string
       ) => void;
-      drain?: (ws: ServerWebSocket<unknown>) => void;
+      drain?: (ws: ServerWebSocket<WSContext>) => void;
     };
   }
 }

@@ -1,4 +1,4 @@
-function parseURLPath(url: string): string {
+function parse_url_path(url: string): string {
   const len = url.length;
   let path_start = 0;
   let path_end = len;
@@ -27,4 +27,4 @@ function parseURLPath(url: string): string {
   return url.substring(path_start, path_end);
 }
 
-export { parseURLPath };
+export { parse_url_path };

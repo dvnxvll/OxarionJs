@@ -18,3 +18,27 @@
 - Changed tsup to Bun native bundler
 - Changed sendPage message when the page is mismatch
 - Changed sendFile message when the file is mismatch
+
+# Version 1.2.0
+- Added type-safe for wsHandler adapter
+- Added file-based `dynamicRouting` option (`dir`, `handlerFile`, `extensions`, `onConflict`)
+- Added static class module support for dynamic routing (`default` or named class exports with `GET/POST/...` methods)
+- Added support for handler return values (`Response`) in `addHandler`, `notFoundHandler`, and `errorHandler`
+- Added static helper responses: `OxarionResponse.json()`, `.text()`, `.html()`, `.redirect()`
+- Added `group()` API for scoped route prefixes with inherited middleware
+- Added global `notFoundHandler` and `errorHandler` hooks
+- Added built-in `Middleware.logger()` utility
+- Added regression tests for middleware wrapping, Bun version check, and traversal protections
+- Added regression tests for dynamic file routing, route conflicts, and response-return handlers
+- Added complete docs inside `docs/` and rewrote `README.md` with linked usage guides
+- Added exported dynamic route types for typed `req` and `res` in file based handlers
+- Fixed `sendPage()` and `sendFile()` encoding buffer
+- Fixed Bun version check to allow newer Bun versions and only block versions below `1.2.19`
+- Fixed `middleware()` and `middlewareChain()` so they correctly wrap dynamic routes without duplicating route entries
+- Fixed directory traversal in `sendPage()` and `sendFile()` by restricting resolved paths to allowed root directories
+- Fixed WebSocket `ServeOptions` type augmentation so TypeScript compile checks pass
+- Fixed grouped middleware wrapper to preserve handler return values and avoid extra promise wrapping
+- Optimized request hot path by initializing `wsHandler` watcher once at startup and warning once for `debugRoutes` in production
+- Removed `examples/` directory and consolidated usage guidance under `docs/`
+- Changed `parseURLPath` to `parse_url_path`
+- Changed `middlewareChain` to `multiMiddleware`

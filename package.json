@@ -1,13 +1,13 @@
 {
   "name": "oxarionjs",
-  "version": "1.1.0",
-  "author": "VoxlD",
+  "version": "1.2.0",
+  "author": "dvnxvll",
   "repository": {
     "type": "git",
-    "url": "https://github.com/VoxlD/OxarionJs"
+    "url": "https://github.com/dvnxvll/OxarionJs"
   },
   "description": "Powerfull Backend Framework Build on top of BunJS",
-  "homepage": "https://github.com/VoxlD/",
+  "homepage": "https://github.com/dvnxvll/",
   "keywords": [
     "bun",
     "framework",

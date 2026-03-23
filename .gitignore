@@ -1,9 +1,12 @@
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
 
+bun.lock
 bun.lockb
-test.ts
+test/
 **/*.test.ts
+**/*.spec.ts
 pages/
+BRIEF.md
 
 # Logs
 

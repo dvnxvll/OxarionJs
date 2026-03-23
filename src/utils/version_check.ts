@@ -1,4 +1,4 @@
-const USED_VER = "1.2.19";
+const MIN_VER = "1.2.19";
 
 async function check_bun_version() {
   const exec = Bun.spawn(["bun", "-v"]);
@@ -9,9 +9,9 @@ async function check_bun_version() {
     return false;
   }
 
-  if (USED_VER !== get_ver) {
+  if (Bun.semver.order(get_ver, MIN_VER) === -1) {
     console.warn(
-      `[Oxarion] Bun version mismatch: expected ${USED_VER}, got ${get_ver}.\nUse 'bun upgrade' to upgrade to the latest version of Bun.`
+      `[Oxarion] Bun version mismatch: minimum required is ${MIN_VER}, got ${get_ver}.\nUse 'bun upgrade' to upgrade to the latest version of Bun.`
     );
     return false;
   }
