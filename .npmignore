@@ -2,8 +2,10 @@ node_modules/
 src/
 test/
 pages/
+docs/
 
 package-lock.json
 bun.lock
 tsconfig.json
 tsup.config.ts
+BRIEF.md
