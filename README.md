@@ -1,18 +1,35 @@
-# OxarionJs
+<p align="center">
+  <img src="assets/OxarionIcon.png" alt="OxarionJs" width="240" />
+</p>
 
-![npm downloads](https://img.shields.io/npm/dm/oxarionjs?style=flat-square&logo=npm&color=blue)
+<p align="center">
+  "Because going faster shouldn’t mean writing more nonsense"
+</p>
 
-OxarionJs is a backend framework on top of Bun with a TypeScript first API
+<p align="center">
+  <a href="https://www.npmjs.com/package/oxarionjs">
+    <img src="https://img.shields.io/npm/dm/oxarionjs?style=flat-square&label=downloads" alt="NPM Downloads" />
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/github/license/dvnxvll/OxarionJs?style=flat-square" alt="License" />
+  </a>
+</p>
+
+---
+
+OxarionJs is a TypeScript-first backend framework built on Bun
+
+It keeps the flow direct, the API clean, and the abstractions where they actually help
 
 ## Why OxarionJs
 
-- Fast runtime on Bun
-- Type safe route params
-- Route groups and middleware chain support
-- File based dynamic routing with `api.ts` and `api.js`
-- Request and response helper API
-- Native WebSocket route integration
-- Test friendly workflow with Bun
+* Built on Bun for fast runtime and a tight development loop
+* Type-safe route params
+* Route groups and middleware chains
+* File-based dynamic routing
+* Request and response helpers
+* Native WebSocket route support
+* Minimal flow without high-level clutter
 
 ## Install
 
@@ -20,7 +37,7 @@ OxarionJs is a backend framework on top of Bun with a TypeScript first API
 bun add oxarionjs
 ```
 
-## Quick Start
+## Quick start
 
 ```ts
 import Oxarion, { Middleware } from "oxarionjs"
@@ -30,7 +47,7 @@ await Oxarion.start({
   port: 3000,
   httpHandler: (router) => {
     router.addHandler("GET", "/", (_req, res) => {
-      res.json({ message: "Welcome" })
+      res.json({ message: "Welcome to OxarionJs" })
     })
   },
   safeMwRegister: (router) => {
@@ -39,16 +56,16 @@ await Oxarion.start({
 })
 ```
 
-Run
+Run it with
 
 ```bash
 bun run src/index.ts
 ```
 
-## Dynamic Routing
+## Dynamic routing
 
 ```ts
-import Oxarion, { OxarionResponse } from "oxarionjs"
+import Oxarion from "oxarionjs"
 
 await Oxarion.start({
   dynamicRouting: {
@@ -62,20 +79,14 @@ await Oxarion.start({
 ```
 
 `dyn/test/api.ts` maps to `/test`
-Route modules can export functions (`GET`, `POST`) or a static class
+
+Route modules can export HTTP method functions or a static class
 
 ```ts
-// dyn/test/api.ts
-import {
-  OxarionResponse,
-  type OxarionRequest,
-} from "oxarionjs"
+import { OxarionResponse, type OxarionRequest } from "oxarionjs"
 
 export default class TestApi {
-  static async GET(
-    req: OxarionRequest,
-    _res: OxarionResponse
-  ) {
+  static async GET(req: OxarionRequest, _res: OxarionResponse) {
     return OxarionResponse.json({ path: req.url() })
   }
 }
@@ -83,16 +94,18 @@ export default class TestApi {
 
 ## Docs
 
-- [Docs Index](./docs/index.md)
-- [Getting Started](./docs/getting_started.md)
-- [Server Options](./docs/server_options.md)
-- [Routing](./docs/routing.md)
-- [Dynamic Routing](./docs/dynamic_routing.md)
-- [Middleware](./docs/middleware.md)
-- [Request And Response](./docs/request_and_response.md)
-- [WebSocket](./docs/websocket.md)
-- [Api Reference](./docs/api_reference.md)
-- [Testing And Benchmarking](./docs/testing_and_benchmarking.md)
+Start here if you want the full guide
+
+* [Docs index](./docs/index.md)
+* [Getting started](./docs/getting_started.md)
+* [Server options](./docs/server_options.md)
+* [Routing](./docs/routing.md)
+* [Dynamic routing](./docs/dynamic_routing.md)
+* [Middleware](./docs/middleware.md)
+* [Request and response](./docs/request_and_response.md)
+* [WebSocket](./docs/websocket.md)
+* [API reference](./docs/api_reference.md)
+* [Testing and benchmarking](./docs/testing_and_benchmarking.md)
 
 ## License
 

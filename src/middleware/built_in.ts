@@ -1,20 +1,25 @@
 import type { MiddlewareFn } from "../types";
 import { parse_url_path } from "../utils/parse_url";
 
+export { rateLimit } from "./rate_limit";
+export { securityHeaders } from "./security_headers";
+export { session_middleware as session } from "./session";
+export { validateJson, validateUrlencoded } from "./validation";
+
 export function cors(
   options: {
     origin?: string | string[];
     methods?: string | string[];
     credentials?: boolean;
-  } = {}
+  } = {},
 ): MiddlewareFn {
   const origin = Array.isArray(options.origin)
     ? options.origin.join(",")
-    : options.origin ?? "*";
+    : (options.origin ?? "*");
 
   const methods = Array.isArray(options.methods)
     ? options.methods.join(",")
-    : options.methods ?? "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS";
+    : (options.methods ?? "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
 
   return async (req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", origin);
@@ -26,7 +31,7 @@ export function cors(
 
       if (origin === "*")
         console.warn(
-          "Warning: When using credentials, you should specify exact origins instead of '*'"
+          "Warning: When using credentials, you should specify exact origins instead of '*'",
         );
     }
 
@@ -79,7 +84,7 @@ export function urlencoded(options: { extended?: boolean } = {}): MiddlewareFn {
       }
     }
 
-    (req as any).body = body;
+    req.__oxarion_set_body(body);
     await next();
   };
 }
@@ -102,14 +107,12 @@ export function json(options: { limit?: number | string } = {}): MiddlewareFn {
           unit === "mb"
             ? num * 1024 * 1024
             : unit === "kb"
-            ? num * 1024
-            : unit === "gb"
-            ? num * 1024 * 1024 * 1024
-            : num;
+              ? num * 1024
+              : unit === "gb"
+                ? num * 1024 * 1024 * 1024
+                : num;
       }
-    } else if (typeof options.limit === "number") {
-      to_bytes = options.limit;
-    }
+    } else if (typeof options.limit === "number") to_bytes = options.limit;
 
     try {
       const length = parseInt(req.getHeaders()["content-length"] || "0", 10);
@@ -124,7 +127,7 @@ export function json(options: { limit?: number | string } = {}): MiddlewareFn {
         return;
       }
 
-      (req as any).body = JSON.parse(raw);
+      req.__oxarion_set_body(JSON.parse(raw));
     } catch (e) {
       res.setStatus(400).json({ error: "Invalid JSON" });
       return;
@@ -137,9 +140,10 @@ export function json(options: { limit?: number | string } = {}): MiddlewareFn {
 export function logger(
   options: {
     writer?: (message: string) => void;
-  } = {}
+  } = {},
 ): MiddlewareFn {
-  const writer = typeof options.writer === "function" ? options.writer : console.log;
+  const writer =
+    typeof options.writer === "function" ? options.writer : console.log;
 
   return async (req, res, next) => {
     const start = performance.now();
@@ -151,7 +155,7 @@ export function logger(
       writer(
         `${req.method()} ${parse_url_path(req.url())} ${res.getStatus()} (${(
           end - start
-        ).toFixed(2)}ms)`
+        ).toFixed(2)}ms)`,
       );
     }
   };

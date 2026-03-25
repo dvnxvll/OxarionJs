@@ -53,6 +53,67 @@ await Oxarion.start({
 })
 ```
 
+## Typed JSON Dispatcher
+
+Use `ws_dispatcher()` to route incoming JSON messages by `type`
+
+```ts
+import Oxarion, { ws_dispatcher } from "oxarionjs"
+
+await Oxarion.start({
+  port: 3000,
+  httpHandler: (router) => {
+    router.switchToWs("/ws")
+  },
+  wsHandler: (watcher) => {
+    watcher.path(
+      "/ws",
+      ws_dispatcher({
+        handlers: {
+          ping: async (ctx) => {
+            ctx.ws.send("pong")
+          },
+        },
+      }),
+    )
+  },
+})
+```
+
+## Message Middleware
+
+Pass `middlewares` so they run before the dispatcher  
+Middleware can override `ctx.json` so the dispatcher uses it for `type`
+
+```ts
+import Oxarion, { ws_dispatcher } from "oxarionjs"
+
+await Oxarion.start({
+  port: 3000,
+  httpHandler: (router) => {
+    router.switchToWs("/ws")
+  },
+  wsHandler: (watcher) => {
+    watcher.path(
+      "/ws",
+      ws_dispatcher({
+        middlewares: [
+          async (ctx, next) => {
+            ctx.json = { type: "ping", payload: { forced: true } }
+            await next()
+          },
+        ],
+        handlers: {
+          ping: async (ctx) => {
+            ctx.ws.send("ok")
+          },
+        },
+      }),
+    )
+  },
+})
+```
+
 ## Notes
 
 - Path in `switchToWs` and `watcher.path` must match

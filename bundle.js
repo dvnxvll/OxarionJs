@@ -21,13 +21,16 @@ const esm_res = await Bun.build({
 });
 
 // Rename .js output to .mjs for ESM
-if (esm_res.outputs)
-  for (const output of esm_res.outputs) {
-    if (output.path.endsWith(".js")) {
-      const mjs = output.path.replace(/\.js$/, ".mjs");
-      await rename(output.path, mjs);
-    }
+if (esm_res.outputs) {
+  let output_len = esm_res.outputs.length;
+  while (output_len--) {
+    const output = esm_res.outputs[output_len];
+    if (!output.path.endsWith(".js")) continue;
+
+    const mjs = output.path.replace(/\.js$/, ".mjs");
+    await rename(output.path, mjs);
   }
+}
 
 // Generate CJS
 await Bun.build({

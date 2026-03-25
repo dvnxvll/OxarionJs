@@ -1,6 +1,6 @@
-import { readFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import { resolve, sep } from "path";
-import type { PageCompression } from "../types";
+import type { PageCompression, SendFileOptions } from "../types";
 
 const page_cache = new Map<string, string>();
 
@@ -14,6 +14,69 @@ export class OxarionResponse {
     private readonly cache_pages: boolean,
     private readonly _req: Request,
   ) {}
+
+  setCookie(
+    name: string,
+    value: string,
+    options: {
+      path?: string;
+      domain?: string;
+      maxAgeSeconds?: number;
+      expires?: Date;
+      httpOnly?: boolean;
+      secure?: boolean;
+      sameSite?: "lax" | "strict" | "none";
+    } = {},
+  ) {
+    if (typeof name !== "string" || !name)
+      throw new TypeError(
+        "[Oxarion] setCookie: name must be a non-empty string",
+      );
+    if (typeof value !== "string")
+      throw new TypeError("[Oxarion] setCookie: value must be a string");
+
+    let cookie = `${name}=${encodeURIComponent(value)}`;
+
+    if (options.path) cookie += `; Path=${options.path}`;
+    if (options.domain) cookie += `; Domain=${options.domain}`;
+    if (options.maxAgeSeconds !== undefined) {
+      if (
+        typeof options.maxAgeSeconds !== "number" ||
+        !Number.isFinite(options.maxAgeSeconds) ||
+        !Number.isInteger(options.maxAgeSeconds)
+      ) {
+        throw new TypeError(
+          "[Oxarion] setCookie: maxAgeSeconds must be an integer number",
+        );
+      }
+      cookie += `; Max-Age=${options.maxAgeSeconds}`;
+    }
+    if (options.expires) cookie += `; Expires=${options.expires.toUTCString()}`;
+    if (options.httpOnly) cookie += "; HttpOnly";
+    if (options.secure) cookie += "; Secure";
+    if (options.sameSite)
+      cookie += `; SameSite=${options.sameSite[0].toUpperCase()}${options.sameSite.slice(1)}`;
+
+    this._headers.append("Set-Cookie", cookie);
+    return this;
+  }
+
+  clearCookie(
+    name: string,
+    options: {
+      path?: string;
+      domain?: string;
+      secure?: boolean;
+      httpOnly?: boolean;
+      sameSite?: "lax" | "strict" | "none";
+    } = {},
+  ) {
+    return this.setCookie(name, "", {
+      ...options,
+      maxAgeSeconds: 0,
+      expires: new Date(0),
+    });
+  }
 
   static json(obj: unknown, init: ResponseInit = {}) {
     const headers = new Headers(init.headers);
@@ -105,11 +168,11 @@ export class OxarionResponse {
     let i = entries.length;
     while (i--) {
       const [k, v] = entries[i];
-      if (typeof k !== "string" || typeof v !== "string") {
+      if (typeof k !== "string" || typeof v !== "string")
         throw new TypeError(
           "[Oxarion] setHeaders: all keys and values must be strings",
         );
-      }
+
       this._headers.set(k, v);
     }
     return this;
@@ -216,13 +279,17 @@ export class OxarionResponse {
       );
 
     const pages_root = resolve(process.cwd(), this.pages_dir_name);
-    const page_path = filePath.endsWith(".html") ? filePath : filePath + ".html";
+    const page_path = filePath.endsWith(".html")
+      ? filePath
+      : filePath + ".html";
     const full_path = resolve(pages_root, page_path);
     const inside_pages_root =
       full_path === pages_root || full_path.startsWith(pages_root + sep);
 
     if (!inside_pages_root) {
-      this.setStatus(403).send("Forbidden: Page path is outside pages directory.");
+      this.setStatus(403).send(
+        "Forbidden: Page path is outside pages directory.",
+      );
       return;
     }
 
@@ -291,15 +358,22 @@ export class OxarionResponse {
    * Sends a file as the response body.
    * @param path - The file path (relative to cwd).
    * @param contentType - Optional content type header.
+   * @param options - Optional caching options for production use.
    * @returns The current OxarionResponse instance.
    */
-  async sendFile(path: string, contentType?: string) {
+  async sendFile(
+    path: string,
+    contentType?: string,
+    options: SendFileOptions = {},
+  ) {
     if (typeof path !== "string")
       throw new TypeError("[Oxarion] sendFile: path must be a string");
     if (contentType !== undefined && typeof contentType !== "string")
       throw new TypeError(
         "[Oxarion] sendFile: contentType must be a string if provided",
       );
+    if (typeof options !== "object" || options === null)
+      throw new TypeError("[Oxarion] sendFile: options must be an object");
 
     try {
       const project_root = resolve(process.cwd());
@@ -308,16 +382,90 @@ export class OxarionResponse {
         full_path === project_root || full_path.startsWith(project_root + sep);
 
       if (!inside_project_root) {
-        this.setStatus(403).send("Forbidden: File path is outside project directory.");
+        this.setStatus(403).send(
+          "Forbidden: File path is outside project directory.",
+        );
         return this;
       }
 
-      const data = await readFile(full_path);
+      const use_etag = options.etag === true;
+      const use_last_modified = options.lastModified === true;
+      if (contentType) this._headers.set("Content-Type", contentType);
 
-      if (contentType) this.setHeader("Content-Type", contentType);
+      if (options.cacheControl) {
+        if (typeof options.cacheControl !== "string")
+          throw new TypeError(
+            "[Oxarion] sendFile: cacheControl must be a string if provided",
+          );
 
-      const body = Uint8Array.from(data);
-      this.send(new Blob([body]));
+        this._headers.set("Cache-Control", options.cacheControl);
+      } else if (options.maxAgeSeconds !== undefined) {
+        if (
+          typeof options.maxAgeSeconds !== "number" ||
+          !Number.isFinite(options.maxAgeSeconds) ||
+          !Number.isInteger(options.maxAgeSeconds) ||
+          options.maxAgeSeconds < 0
+        )
+          throw new TypeError(
+            "[Oxarion] sendFile: maxAgeSeconds must be a non-negative integer",
+          );
+
+        this._headers.set(
+          "Cache-Control",
+          `public, max-age=${options.maxAgeSeconds}, must-revalidate`,
+        );
+      }
+
+      if (!use_etag && !use_last_modified) {
+        this._body = Bun.file(full_path) as any;
+        return this;
+      }
+
+      const file_stat = await stat(full_path);
+      const etag = use_etag
+        ? `W/"${file_stat.size}-${Math.floor(file_stat.mtimeMs)}"`
+        : undefined;
+      const last_modified = use_last_modified
+        ? new Date(file_stat.mtimeMs).toUTCString()
+        : undefined;
+
+      if (etag) this._headers.set("ETag", etag);
+      if (last_modified) this._headers.set("Last-Modified", last_modified);
+      this._headers.set("Accept-Ranges", "bytes");
+      this._headers.set("Content-Length", String(file_stat.size));
+
+      const if_none_match = this._req.headers.get("if-none-match");
+      if (use_etag && if_none_match && etag) {
+        const parts = if_none_match.split(",");
+        let i = 0;
+        let hit = false;
+        while (i < parts.length) {
+          const token = parts[i++].trim();
+          if (token === "*" || token === etag) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) {
+          this.setStatus(304);
+          this._body = null;
+          return this;
+        }
+      }
+
+      const if_modified_since = this._req.headers.get("if-modified-since");
+      if (use_last_modified && if_modified_since && last_modified) {
+        const since_ms = Date.parse(if_modified_since);
+        if (!Number.isNaN(since_ms)) {
+          if (file_stat.mtimeMs <= since_ms) {
+            this.setStatus(304);
+            this._body = null;
+            return this;
+          }
+        }
+      }
+
+      this._body = Bun.file(full_path) as any;
     } catch {
       this.setStatus(404).send(
         "File Mismatch: The requested file does not match any available files.",

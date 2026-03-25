@@ -3,9 +3,13 @@ src/
 test/
 pages/
 docs/
+assets/
+temp-files/
 
 package-lock.json
 bun.lock
 tsconfig.json
 tsup.config.ts
 BRIEF.md
+bundle.js
+changelog.txt

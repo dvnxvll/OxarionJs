@@ -11,6 +11,8 @@ import Oxarion, {
   Middleware,
   RoutesWrapper,
   ParsedFormData,
+  ws_dispatcher,
+  generate_openapi_spec,
 } from "oxarionjs"
 ```
 
@@ -32,6 +34,12 @@ Stops current server and cleans router state
 router.addHandler(method, path, handler)
 ```
 
+### addHandlerOpenApi
+
+```ts
+router.addHandlerOpenApi(method, path, handler, openapiDefinition)
+```
+
 ### injectWrapper
 
 ```ts
@@ -48,6 +56,18 @@ router.middleware(base_path, middleware_fn, all_routes?)
 
 ```ts
 router.multiMiddleware(base_path, middleware_array, all_routes?)
+```
+
+### serveStatic
+
+```ts
+router.serveStatic(prefix, dir, options?)
+```
+
+### serveOpenApi
+
+```ts
+router.serveOpenApi(spec_path, options)
 ```
 
 ### group
@@ -75,6 +95,11 @@ router.switchToWs(path)
 - `await req.json()`
 - `await req.text()`
 - `await req.form()`
+- `req.getBody()`
+- `req.getCookies()`
+- `req.getCookie(name)`
+- `req.getSessionId()`
+- `req.getSessionValue(key)`
 - `req.raw` native Request
 
 ## Response API
@@ -88,7 +113,9 @@ router.switchToWs(path)
 - `res.json(obj)`
 - `res.redirect(url, status?)`
 - `await res.sendPage(file_path, compression?)`
-- `await res.sendFile(file_path, content_type?)`
+- `await res.sendFile(file_path, content_type?, options?)`
+- `res.setCookie(name, value, options?)`
+- `res.clearCookie(name, options?)`
 
 ### Static helper style
 
@@ -113,6 +140,11 @@ router.switchToWs(path)
 - `Middleware.json(options?)`
 - `Middleware.urlencoded(options?)`
 - `Middleware.logger(options?)`
+- `Middleware.rateLimit(options)`
+- `Middleware.securityHeaders(options?)`
+- `Middleware.session(options?)`
+- `Middleware.validateJson(schema, options?)`
+- `Middleware.validateUrlencoded(schema, options?)`
 
 ## DynamicRoutingOptions
 

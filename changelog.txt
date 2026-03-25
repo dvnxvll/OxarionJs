@@ -42,3 +42,15 @@
 - Removed `examples/` directory and consolidated usage guidance under `docs/`
 - Changed `parseURLPath` to `parse_url_path`
 - Changed `middlewareChain` to `multiMiddleware`
+
+# Version 1.3.0
+- Added production cookie helpers and an in-memory session middleware
+- Added built-in `Middleware.rateLimit()` and `Middleware.securityHeaders()`
+- Added request body validation middleware (`Middleware.validateJson`, `Middleware.validateUrlencoded`)
+- Added OpenAPI v3 spec generation and `router.serveOpenApi()` endpoint
+- Added `router.serveStatic()` for directory-based static assets with traversal protection
+- Added per-route OpenAPI request/response schema metadata (`router.addHandlerOpenApi`)
+- Added WebSocket message middleware helpers and a typed JSON message dispatcher (`ws_dispatcher`)
+- OpenAPI generator now includes `requestBody` and per-status response `content` schemas
+- Upgraded `res.sendFile()` to stream files and support conditional requests via `ETag` and `Last-Modified`
+- Updated 'README.md'

@@ -29,4 +29,6 @@ This folder contains practical guides and API usage for OxarionJs
 - Custom `notFoundHandler` and `errorHandler`
 - `OxarionResponse` instance and static helper style
 - Native WebSocket integration per route
+- Typed JSON WebSocket dispatcher
+- Per-route request/response validation and OpenAPI schemas
 - Bun test friendly project setup

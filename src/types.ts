@@ -15,21 +15,18 @@ export type Method =
 
 export type Handler = (
   req: OxarionRequest<any>,
-  res: OxarionResponse
+  res: OxarionResponse,
 ) => HandlerResult | Promise<HandlerResult>;
 
 export type HandlerResult = void | Response;
 
-export type DynamicRouteParams = Record<
-  string,
-  string | string[] | undefined
->;
+export type DynamicRouteParams = Record<string, string | string[] | undefined>;
 
 export type DynamicRouteHandler<
   TParams extends DynamicRouteParams = DynamicRouteParams,
 > = (
   req: OxarionRequest<TParams>,
-  res: OxarionResponse
+  res: OxarionResponse,
 ) => HandlerResult | Promise<HandlerResult>;
 
 export type DynamicRouteExportMap = Partial<
@@ -48,7 +45,7 @@ export type DynamicRouteModule = DynamicRouteExportMap & {
 export type ErrorHandler = (
   error: unknown,
   req: OxarionRequest<any>,
-  res: OxarionResponse
+  res: OxarionResponse,
 ) => HandlerResult | Promise<HandlerResult>;
 
 export interface Route {
@@ -57,6 +54,7 @@ export interface Route {
   segments: string[];
   paramNames: string[];
   isStatic: boolean;
+  openapi?: OpenApiRouteDefinition;
 }
 
 export interface OxarionOptions {
@@ -165,9 +163,12 @@ export interface OxarionOptions {
 
 export interface OxarionRouter {
   addHandler: Router["addHandler"];
+  addHandlerOpenApi: Router["addHandlerOpenApi"];
   injectWrapper: Router["injectWrapper"];
   middleware: Router["middleware"];
   multiMiddleware: Router["multiMiddleware"];
+  serveStatic: Router["serveStatic"];
+  serveOpenApi: Router["serveOpenApi"];
   switchToWs: Router["switchToWs"];
   group: Router["group"];
 }
@@ -176,6 +177,149 @@ export interface MiddlewareRegister {
   middleware: Router["middleware"];
   multiMiddleware: Router["multiMiddleware"];
 }
+
+export type ServeStaticOptions = {
+  indexFile?: string;
+  contentType?: string;
+  etag?: boolean;
+  lastModified?: boolean;
+  cacheControl?: string;
+  maxAgeSeconds?: number;
+};
+
+export type OpenApiInfo = {
+  title: string;
+  version: string;
+  description?: string;
+};
+
+export type OpenApiServer = {
+  url: string;
+  description?: string;
+};
+
+export type OpenApiOptions = {
+  info: OpenApiInfo;
+  servers?: OpenApiServer[];
+};
+
+export type ServeOpenApiOptions = {
+  info: OpenApiInfo;
+  servers?: OpenApiServer[];
+  /**
+   * Optional: exclude the OpenAPI endpoint itself from `paths`.
+   * @default true
+   */
+  excludeEndpointFromSpec?: boolean;
+};
+
+export type SendFileOptions = {
+  etag?: boolean;
+  lastModified?: boolean;
+  cacheControl?: string;
+  maxAgeSeconds?: number;
+};
+
+export type RateLimitOptions = {
+  limit: number;
+  windowMs: number;
+  keyGenerator?: (req: OxarionRequest<any>) => string;
+  statusCode?: number;
+  message?: string;
+  includeHeaders?: boolean;
+};
+
+export type RateLimitEntry = {
+  count: number;
+  resetAtMs: number;
+};
+
+export type HstsOptions = {
+  maxAgeSeconds?: number;
+  includeSubDomains?: boolean;
+  preload?: boolean;
+};
+
+export type SecurityHeadersOptions = {
+  contentSecurityPolicy?: string;
+  referrerPolicy?: string;
+  permissionsPolicy?: string;
+  xFrameOptions?: "DENY" | "SAMEORIGIN";
+  hsts?: HstsOptions | false;
+};
+
+export type SessionOptions = {
+  cookieName?: string;
+  ttlMs?: number;
+  path?: string;
+  sameSite?: "lax" | "strict" | "none";
+  secure?: boolean;
+  httpOnly?: boolean;
+  rolling?: boolean;
+};
+
+export type SessionEntry = {
+  data: Record<string, unknown>;
+  expiresAtMs: number;
+};
+
+export type SafeParseResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: unknown };
+
+export type SafeParseSchema<T> = {
+  safeParse: (value: unknown) => SafeParseResult<T>;
+};
+
+export type ValidationErrorShape = {
+  error: string;
+  details?: unknown;
+};
+
+export type ValidationOptions = {
+  statusCode?: number;
+  message?: string;
+  includeDetails?: boolean;
+};
+
+export type OpenApiSchema = {
+  type?: string;
+  format?: string;
+  items?: OpenApiSchema;
+  properties?: Record<string, OpenApiSchema>;
+  required?: string[];
+  enum?: string[];
+  description?: string;
+  additionalProperties?: boolean | OpenApiSchema;
+};
+
+export type OpenApiParameter = {
+  name: string;
+  in: "path";
+  required: boolean;
+  schema: OpenApiSchema;
+  description?: string;
+};
+
+export type OpenApiRequestBody = {
+  contentType?: string;
+  required?: boolean;
+  schema: OpenApiSchema;
+};
+
+export type OpenApiResponseBody = {
+  description?: string;
+  contentType?: string;
+  schema?: OpenApiSchema;
+};
+
+export type OpenApiResponses = Record<string, OpenApiResponseBody>;
+
+export type OpenApiRouteDefinition = {
+  parameters?: OpenApiParameter[];
+  requestBody?: OpenApiRequestBody;
+  responses?: OpenApiResponses;
+};
 
 export type PageCompression =
   | {
@@ -277,7 +421,7 @@ export type PageCompression =
 export type MiddlewareFn = (
   req: OxarionRequest<any>,
   res: OxarionResponse,
-  next: () => Promise<HandlerResult>
+  next: () => Promise<HandlerResult>,
 ) => void | Promise<void>;
 
 export interface DynamicRoutingOptions {
@@ -326,12 +470,12 @@ export type WSHandler = {
   onOpen?: (ws: ServerWebSocket<unknown>) => void;
   onMessage?: (
     ws: ServerWebSocket<unknown>,
-    message: string | Uint8Array
+    message: string | Uint8Array,
   ) => void;
   onClose?: (
     ws: ServerWebSocket<unknown>,
     code: number,
-    reason: string
+    reason: string,
   ) => void;
   onDrain?: (ws: ServerWebSocket<unknown>) => void;
 };
@@ -340,18 +484,60 @@ export interface WSContext {
   handler?: WSHandler;
 }
 
+export type WSMessageContext = {
+  ws: ServerWebSocket<unknown>;
+  raw_message: string | Uint8Array;
+  message_text: string;
+  json?: unknown;
+};
+
+export type WSMessageMiddlewareFn = (
+  ctx: WSMessageContext,
+  next: () => Promise<void>,
+) => void | Promise<void>;
+
+export type WSMessageFinalHandler = (
+  ctx: WSMessageContext,
+) => void | Promise<void>;
+
+export type WsTypedMessage = {
+  type: string;
+  payload?: unknown;
+};
+
+export type WsDispatcherHandlers<
+  TMessages extends WsTypedMessage = WsTypedMessage,
+> = Partial<
+  Record<
+    TMessages["type"],
+    (ctx: WSMessageContext, payload: any) => void | Promise<void>
+  >
+>;
+
+export type WsDispatcherOptions<
+  TMessages extends WsTypedMessage = WsTypedMessage,
+> = {
+  handlers: WsDispatcherHandlers<TMessages>;
+  getType?: (json: unknown) => string | undefined;
+  getPayload?: (json: unknown) => unknown;
+  parse?: (text: string) => unknown;
+  onUnknown?: (ctx: WSMessageContext) => void | Promise<void>;
+  onError?: (err: unknown, ctx: WSMessageContext) => void | Promise<void>;
+  middlewares?: WSMessageMiddlewareFn[];
+};
+
 declare module "bun" {
   interface ServeOptions {
     websocket?: {
       open?: (ws: ServerWebSocket<WSContext>) => void;
       message?: (
         ws: ServerWebSocket<WSContext>,
-        message: string | Uint8Array
+        message: string | Uint8Array,
       ) => void;
       close?: (
         ws: ServerWebSocket<WSContext>,
         code: number,
-        reason: string
+        reason: string,
       ) => void;
       drain?: (ws: ServerWebSocket<WSContext>) => void;
     };

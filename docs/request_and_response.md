@@ -15,6 +15,25 @@ Inside every handler, `req` is `OxarionRequest`
 - `await req.json()`
 - `await req.text()`
 - `await req.form()`
+- `req.getBody()`
+- `req.getCookies()`
+- `req.getCookie(name)`
+- `req.getSessionId()`
+- `req.getSessionValue(key)`
+- `req.setSessionValue(key, value)`
+- `req.deleteSessionValue(key)`
+
+## Cookies and sessions
+
+`req.getCookies()` reads the raw cookie header  
+`Middleware.session()` populates session helpers on `req` and persists them with a cookie
+
+```ts
+router.middleware(
+  "/",
+  Middleware.session({ cookieName: "oxarion_session" }),
+)
+```
 
 ## Request Usage
 
@@ -52,6 +71,8 @@ Useful methods
 - `res.send(body)`
 - `res.json(obj)`
 - `res.redirect(url, status?)`
+- `res.setCookie(name, value, options?)`
+- `res.clearCookie(name, options?)`
 
 ### Static Helpers For Return Style
 
@@ -92,9 +113,15 @@ Notes
 
 ```ts
 await res.sendFile("public/logo.png", "image/png")
+await res.sendFile("public/logo.png", "image/png", {
+  etag: true,
+  lastModified: true,
+  cacheControl: "public, max-age=60, must-revalidate",
+})
 ```
 
 Notes
 
 - Resolves path under project root
 - Blocks path traversal outside project root
+- Supports `ETag` and `Last-Modified` with conditional requests

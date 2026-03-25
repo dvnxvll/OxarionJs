@@ -53,6 +53,54 @@ Middleware.logger({
 })
 ```
 
+### rateLimit
+
+```ts
+Middleware.rateLimit({
+  limit: 100,
+  windowMs: 60_000,
+  keyGenerator: (req) => req.getHeaders()["x-real-ip"] || "anon",
+  statusCode: 429,
+})
+```
+
+### securityHeaders
+
+```ts
+Middleware.securityHeaders({
+  xFrameOptions: "SAMEORIGIN",
+  referrerPolicy: "no-referrer",
+  permissionsPolicy: "none",
+})
+```
+
+### session
+
+Session is in-memory and meant for production-compatible demos and small deployments
+
+```ts
+Middleware.session({
+  cookieName: "oxarion_session",
+  ttlMs: 7 * 24 * 60 * 60 * 1000,
+  httpOnly: true,
+  rolling: true,
+})
+```
+
+### validateJson
+
+`schema` must implement `safeParse(value)` like Zod
+
+```ts
+Middleware.validateJson(schema, { message: "Invalid payload" })
+```
+
+### validateUrlencoded
+
+```ts
+Middleware.validateUrlencoded(schema, { message: "Invalid form body" })
+```
+
 ## Custom Middleware
 
 ```ts

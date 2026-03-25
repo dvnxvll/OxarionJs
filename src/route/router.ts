@@ -1,5 +1,4 @@
 import type { OxarionRequest } from "../handler/request";
-import type { OxarionResponse } from "../handler/response";
 import type {
   Route,
   Method,
@@ -8,10 +7,16 @@ import type {
   HandlerResult,
   MiddlewareFn,
   OxarionRouter,
+  ServeStaticOptions,
+  ServeOpenApiOptions,
+  OpenApiRouteDefinition,
 } from "../types";
 import { symbl_get_routes, type RoutesWrapper } from "./wrapper";
 import { compose_middleware } from "../utils/middleware";
 import { parse_url_path } from "../utils/parse_url";
+import { extname, resolve, sep } from "path";
+import { OxarionResponse } from "../handler/response";
+import { generate_openapi_spec } from "../openapi/generate_openapi";
 
 export class Router {
   private routes: Route[] = [];
@@ -59,6 +64,15 @@ export class Router {
           this.wrap_handler_with_middleware(handler as any, middlewares) as any,
         );
       },
+      addHandlerOpenApi: (method, path, handler, openapi) => {
+        const full_path = this.join_paths(base, path);
+        this.addHandlerOpenApi(
+          method,
+          full_path as any,
+          this.wrap_handler_with_middleware(handler as any, middlewares) as any,
+          openapi,
+        );
+      },
       injectWrapper: (group_base, wrapper) => {
         const full_base = this.join_paths(base, group_base);
         this.injectWrapper(full_base, wrapper);
@@ -74,6 +88,12 @@ export class Router {
           ? base
           : this.join_paths(base, this.clean_base_path(group_base));
         this.multiMiddleware(target_base, chain, false);
+      },
+      serveStatic: (prefix, dir, options) => {
+        this.serveStatic(this.join_paths(base, prefix), dir, options);
+      },
+      serveOpenApi: (spec_path, options) => {
+        this.serveOpenApi(this.join_paths(base, spec_path), options);
       },
       switchToWs: (path) => {
         this.switchToWs(this.join_paths(base, path));
@@ -159,6 +179,74 @@ export class Router {
     }
   }
 
+  addHandlerOpenApi<Path extends string>(
+    method: Method,
+    path: Path,
+    handler: (
+      req: OxarionRequest<ExtractRouteParams<Path>>,
+      res: OxarionResponse,
+    ) => HandlerResult | Promise<HandlerResult>,
+    openapi: OpenApiRouteDefinition,
+  ) {
+    if (typeof method !== "string")
+      throw new TypeError(
+        "[Oxarion] addHandlerOpenApi: method must be a string",
+      );
+    if (typeof path !== "string")
+      throw new TypeError("[Oxarion] addHandlerOpenApi: path must be a string");
+    if (typeof handler !== "function")
+      throw new TypeError(
+        "[Oxarion] addHandlerOpenApi: handler must be a function",
+      );
+    if (typeof openapi !== "object" || openapi === null)
+      throw new TypeError(
+        "[Oxarion] addHandlerOpenApi: openapi must be an object",
+      );
+    if (path[0] !== "/")
+      throw new Error(
+        `[Oxarion] addHandlerOpenApi: path must start with '/', received: "${path}"`,
+      );
+
+    const segments: string[] = [];
+    const param_names: string[] = [];
+    let is_static = true;
+    let i = 1;
+    let start = 1;
+
+    while (i <= path.length) {
+      if (i === path.length || path[i] === "/") {
+        if (i > start) {
+          const segment = path.slice(start, i);
+          segments.push(segment);
+          if (segment[0] === "[") {
+            is_static = false;
+            const is_catch_all = segment.startsWith("[...");
+            param_names.push(
+              is_catch_all ? segment.slice(4, -1) : segment.slice(1, -1),
+            );
+          }
+        }
+        start = i + 1;
+      }
+      i++;
+    }
+
+    const route: Route = {
+      method,
+      handler: handler as Handler,
+      segments,
+      paramNames: param_names,
+      isStatic: is_static,
+      openapi,
+    };
+
+    this.routes.push(route);
+
+    if (is_static) {
+      this.route_cache.set(`${method}:${path}`, route);
+    }
+  }
+
   /**
    * Marks a route as a WebSocket endpoint.
    * @param path - The WebSocket route path (must start with '/').
@@ -173,6 +261,150 @@ export class Router {
       );
 
     this.ws_routes.set(path, true);
+  }
+
+  /**
+   * Serves files from a directory under a given route prefix.
+   * Uses traversal protection and forwards caching to `res.sendFile()`.
+   */
+  serveStatic(prefix: string, dir: string, options: ServeStaticOptions = {}) {
+    if (typeof prefix !== "string")
+      throw new TypeError("[Oxarion] serveStatic: prefix must be a string");
+    if (typeof dir !== "string" || !dir)
+      throw new TypeError(
+        "[Oxarion] serveStatic: dir must be a non-empty string",
+      );
+    if (prefix[0] !== "/")
+      throw new Error(
+        `[Oxarion] serveStatic: prefix must start with '/', received: "${prefix}"`,
+      );
+
+    const normalized_prefix = prefix === "/" ? "/" : prefix.replace(/\/+$/, "");
+    const static_root = resolve(process.cwd(), dir);
+    const index_file = options.indexFile ?? "index.html";
+
+    const ext_content_type = (file_path: string): string => {
+      const ext = extname(file_path).toLowerCase();
+      if (ext === ".html") return "text/html; charset=utf-8";
+      if (ext === ".txt") return "text/plain; charset=utf-8";
+      if (ext === ".js") return "text/javascript; charset=utf-8";
+      if (ext === ".css") return "text/css; charset=utf-8";
+      if (ext === ".json") return "application/json; charset=utf-8";
+      if (ext === ".png") return "image/png";
+      if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+      if (ext === ".svg") return "image/svg+xml";
+      if (ext === ".webp") return "image/webp";
+      if (ext === ".gif") return "image/gif";
+      return "application/octet-stream";
+    };
+
+    const build_rel_path = (segments: string[] | undefined): string => {
+      if (!segments || !segments.length) return index_file;
+      let rel = segments[0];
+      let i = 1;
+      while (i < segments.length) rel += "/" + segments[i++];
+      return rel;
+    };
+
+    const catch_all_route =
+      normalized_prefix === "/"
+        ? "/[...path]"
+        : `${normalized_prefix}/[...path]`;
+
+    const index_route = normalized_prefix === "/" ? "/" : normalized_prefix;
+
+    const cache_options = {
+      etag: options.etag,
+      lastModified: options.lastModified,
+      cacheControl: options.cacheControl,
+      maxAgeSeconds: options.maxAgeSeconds,
+    };
+
+    const serve_handler = async (
+      req: OxarionRequest<any>,
+      res: OxarionResponse,
+    ) => {
+      const project_root = resolve(process.cwd());
+      const full_path = (() => {
+        const segments = (req.getParam("path") as string[] | undefined) || [];
+        const rel = build_rel_path(segments);
+        const resolved = resolve(static_root, rel);
+        const inside_static_root =
+          resolved === static_root || resolved.startsWith(static_root + sep);
+        if (!inside_static_root) return null;
+        return resolved;
+      })();
+
+      if (!full_path) {
+        res
+          .setStatus(403)
+          .send("Forbidden: Static asset path is outside the allowed root.");
+        return;
+      }
+
+      const inside_project_root =
+        full_path === project_root || full_path.startsWith(project_root + sep);
+
+      if (!inside_project_root) {
+        res
+          .setStatus(403)
+          .send("Forbidden: Static asset path is outside project directory.");
+        return;
+      }
+
+      const content_type = options.contentType ?? ext_content_type(full_path);
+      const relative_to_project = full_path.slice(project_root.length + 1);
+
+      await res.sendFile(relative_to_project, content_type, cache_options);
+    };
+
+    this.addHandler("GET", index_route, async (_req, res) => {
+      const req_any = _req as OxarionRequest<any>;
+      await serve_handler(req_any, res);
+    });
+    this.addHandler("HEAD", index_route, async (_req, res) => {
+      const req_any = _req as OxarionRequest<any>;
+      await serve_handler(req_any, res);
+    });
+
+    this.addHandler("GET", catch_all_route, serve_handler);
+    this.addHandler("HEAD", catch_all_route, serve_handler);
+  }
+
+  /**
+   * Serves a generated OpenAPI JSON spec for all registered HTTP routes.
+   * The spec is generated on first request and cached in-memory.
+   */
+  serveOpenApi(spec_path: string, options: ServeOpenApiOptions) {
+    if (typeof spec_path !== "string" || !spec_path)
+      throw new TypeError(
+        "[Oxarion] serveOpenApi: spec_path must be a non-empty string",
+      );
+    if (spec_path[0] !== "/")
+      throw new Error(
+        `[Oxarion] serveOpenApi: spec_path must start with '/', received: "${spec_path}"`,
+      );
+    if (typeof options !== "object" || options === null)
+      throw new TypeError("[Oxarion] serveOpenApi: options must be an object");
+
+    const exclude_endpoint = options.excludeEndpointFromSpec ?? true;
+    let cached_spec: Record<string, unknown> | null = null;
+
+    this.addHandler("GET", spec_path, async (_req, _res) => {
+      if (!cached_spec) {
+        const routes = this.dump_routes().filter((r) => {
+          if (!exclude_endpoint) return true;
+          return r.path !== spec_path;
+        });
+
+        cached_spec = generate_openapi_spec(routes, {
+          info: options.info,
+          servers: options.servers,
+        });
+      }
+
+      return OxarionResponse.json(cached_spec);
+    });
   }
 
   /**
@@ -195,8 +427,8 @@ export class Router {
 
     const base_clean = base.replace(/\/$/, "");
     const routes = wrapper[symbl_get_routes]();
-    let i = routes.length;
 
+    let i = routes.length;
     while (i--) {
       const { method, path, handler } = routes[i];
       this.addHandler(
@@ -271,7 +503,6 @@ export class Router {
       );
 
     let i = this.routes.length;
-
     while (i--) {
       const route = this.routes[i];
       const path = this.route_path_from_segments(route.segments);
@@ -347,9 +578,7 @@ export class Router {
       seg_start = 1;
     while (i <= pathname.length) {
       if (i === pathname.length || pathname[i] === "/") {
-        if (i > seg_start) {
-          url_segments.push(pathname.slice(seg_start, i));
-        }
+        if (i > seg_start) url_segments.push(pathname.slice(seg_start, i));
         seg_start = i + 1;
       }
       i++;
@@ -376,9 +605,7 @@ export class Router {
           if (seg.startsWith("[...")) {
             params[seg.slice(4, -1)] = url_segments.slice(url_i);
             break;
-          } else {
-            params[seg.slice(1, -1)] = url_segments[url_i];
-          }
+          } else params[seg.slice(1, -1)] = url_segments[url_i];
         } else if (seg !== url_segments[url_i]) {
           matched = false;
           break;
@@ -396,7 +623,12 @@ export class Router {
     return this.match(method, parse_url_path(url));
   }
 
-  dump_routes(): { method: Method; path: string; handler: Handler }[] {
+  dump_routes(): {
+    method: Method;
+    path: string;
+    handler: Handler;
+    openapi?: OpenApiRouteDefinition;
+  }[] {
     let i = this.routes.length;
     const result = new Array(i);
 
@@ -406,6 +638,7 @@ export class Router {
         method: r.method,
         path: this.route_path_from_segments(r.segments),
         handler: r.handler,
+        openapi: r.openapi,
       };
     }
 

@@ -1,4 +1,9 @@
-import type { Method, Handler, OxarionRouter } from "../types";
+import type {
+  Method,
+  Handler,
+  OxarionRouter,
+  OpenApiRouteDefinition,
+} from "../types";
 import { Router } from "./router";
 
 export const symbl_get_routes = Symbol("_getRoutes");
@@ -23,6 +28,7 @@ export class RoutesWrapper {
     method: Method;
     path: string;
     handler: Handler;
+    openapi?: OpenApiRouteDefinition;
   }[] {
     return this.router.dump_routes();
   }
