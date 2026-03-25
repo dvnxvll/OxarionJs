@@ -1,4 +1,4 @@
-import { Oxarion, OxarionResponse } from "oxarion";
+import { Oxarion, OxarionResponse } from "oxarionjs";
 
 const PORT = 8787;
 
