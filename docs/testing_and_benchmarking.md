@@ -2,10 +2,10 @@
 
 ## Benchmark suite
 
-The benchmark runner lives in the `benchmark` directory.
+The benchmark runner lives in the `benchmarks` directory.
 
-- Runner: `benchmark/run-benchmark.ts`
-- Output: `benchmark/Results.md`
+- Runner: `benchmarks/run-benchmark.ts`
+- Output: `benchmarks/Results.md`
 
 ## Install `oha`
 
@@ -46,7 +46,7 @@ oha --version
 ## Run the full benchmark suite
 
 ```bash
-bun run benchmark/run-benchmark.ts
+bun run benchmarks/run-benchmark.ts
 ```
 
 ## What the benchmark covers
@@ -90,7 +90,7 @@ oha -z 30s -c 200 http://127.0.0.1:3000/echo/123?foo=bar
 The generated benchmark report is written to:
 
 ```text
-benchmark/Results.md
+benchmarks/Results.md
 ```
 
 The report includes:
@@ -130,5 +130,5 @@ For the fairest comparison:
 2. Run tests
 3. Run type checks
 4. Run the benchmark suite
-5. Compare the generated `benchmark/Results.md`
+5. Compare the generated `benchmarks/Results.md`
 6. Repeat on a quiet machine state before drawing conclusions
