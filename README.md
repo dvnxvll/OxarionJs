@@ -17,9 +17,9 @@
 
 ---
 
-OxarionJs is a TypeScript-first backend framework built on Bun
+OxarionJs is a TypeScript-first backend framework built on Bun.
 
-It keeps the flow direct, the API clean, and the abstractions where they actually help
+It keeps the flow direct, the API clean, and the abstractions where they actually help.
 
 ## Why OxarionJs
 
@@ -79,9 +79,9 @@ await Oxarion.start({
 })
 ```
 
-`dyn/test/api.ts` maps to `/test`
+`dyn/test/api.ts` maps to `/test`.
 
-Route modules can export HTTP method functions or a static class
+Route modules can export HTTP method functions or a static class.
 
 ```ts
 import { OxarionResponse, type OxarionRequest } from "oxarionjs"
@@ -93,9 +93,39 @@ export default class TestApi {
 }
 ```
 
+## Benchmark
+
+OxarionJs is built to stay lightweight on the hot path, and local benchmarking reflects that well.
+
+Here is an example result from the Bun benchmark suite used during development:
+
+| Framework         | Average Req/Sec |
+| ----------------- | --------------: |
+| Oxarion           |          232632 |
+| Previous baseline |          179348 |
+
+That specific change represents roughly a **30% throughput improvement**.
+
+For a single endpoint sample from the local benchmark runner:
+
+| Endpoint      | Framework | Req/Sec | Avg Latency | P99 Latency |
+| ------------- | --------- | ------: | ----------: | ----------: |
+| JSON Response | Oxarion   |  254320 |    0.785 ms |    1.140 ms |
+
+### Benchmark notes
+
+* Benchmarks are run locally on Bun using `oha`
+* Measured runs use sustained timed execution rather than short burst tests
+* Results are more useful for comparing framework overhead on identical handlers than for making universal performance claims
+* Numbers may vary based on hardware, Bun version, OS scheduling, thermal state, and background apps
+
+If you want to reproduce the same style of measurement, see:
+
+* [Testing and benchmarking](./docs/testing_and_benchmarking.md)
+
 ## Docs
 
-Start here if you want the full guide
+Start here if you want the full guide.
 
 * [Docs index](./docs/index.md)
 * [Getting started](./docs/getting_started.md)

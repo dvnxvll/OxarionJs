@@ -141,7 +141,7 @@ async function waitForServer(port: number): Promise<boolean> {
 
 async function startServer(
   framework: FrameworkConfig,
-): Promise<Bun.ChildProcess> {
+): Promise<Bun.Subprocess> {
   console.log(`Starting ${framework.name} on port ${framework.port}...`);
 
   const proc = Bun.spawn(["bun", "run", framework.file], {
@@ -166,7 +166,7 @@ async function startServer(
   return proc;
 }
 
-function stopServer(proc: Bun.ChildProcess): void {
+function stopServer(proc: Bun.Subprocess): void {
   try {
     proc.kill();
   } catch {}
