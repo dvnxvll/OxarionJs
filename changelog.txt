@@ -54,3 +54,4 @@
 - OpenAPI generator now includes `requestBody` and per-status response `content` schemas
 - Upgraded `res.sendFile()` to stream files and support conditional requests via `ETag` and `Last-Modified`
 - Updated 'README.md'
+- Added Route Injector docs for modular route organization with `RoutesWrapper` and `injectWrapper`

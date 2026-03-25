@@ -26,6 +26,7 @@ It keeps the flow direct, the API clean, and the abstractions where they actuall
 * Built on Bun for fast runtime and a tight development loop
 * Type-safe route params
 * Route groups and middleware chains
+* Route injector for modular structure
 * File-based dynamic routing
 * Request and response helpers
 * Native WebSocket route support
@@ -100,6 +101,7 @@ Start here if you want the full guide
 * [Getting started](./docs/getting_started.md)
 * [Server options](./docs/server_options.md)
 * [Routing](./docs/routing.md)
+* [Route Injector](./docs/route_injector.md)
 * [Dynamic routing](./docs/dynamic_routing.md)
 * [Middleware](./docs/middleware.md)
 * [Request and response](./docs/request_and_response.md)

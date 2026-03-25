@@ -10,6 +10,7 @@ This folder contains practical guides and API usage for OxarionJs
 ## Core Usage
 
 - [Routing](./routing.md)
+- [Route Injector](./route_injector.md)
 - [Dynamic Routing](./dynamic_routing.md)
 - [Middleware](./middleware.md)
 - [Request And Response](./request_and_response.md)

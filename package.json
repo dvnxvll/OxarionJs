@@ -4,7 +4,7 @@
   "author": "dvnxvll",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dvnxvll/OxarionJs"
+    "url": "git+https://github.com/dvnxvll/OxarionJs.git"
   },
   "description": "Powerfull Backend Framework Build on top of BunJS",
   "homepage": "https://github.com/dvnxvll/",

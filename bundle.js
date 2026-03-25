@@ -12,6 +12,7 @@ const options = {
   minify: true,
   plugins: [dts()],
   sourcemap: false,
+  legalComments: "none",
 };
 
 // Generate ESM
