@@ -5,6 +5,7 @@ pages/
 docs/
 assets/
 temp-files/
+benchmark/
 
 package-lock.json
 bun.lock
