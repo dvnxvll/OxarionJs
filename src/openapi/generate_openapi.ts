@@ -16,9 +16,7 @@ function path_to_openapi_template(path: string): {
   const parameters: OpenApiParameter[] = [];
   const out_parts: string[] = [];
 
-  let i = 0;
-  while (i < parts.length) {
-    const seg = parts[i++];
+  for (const seg of parts) {
     if (seg.startsWith("[...") && seg.endsWith("]")) {
       const name = seg.slice(4, -1);
       out_parts.push(`{${name}}`);
@@ -67,20 +65,14 @@ export function generate_openapi_spec(
   }>,
   options: OpenApiOptions,
 ): Record<string, unknown> {
-  const paths: Record<string, unknown> = Object.create(null);
+  const paths: Record<string, unknown> = {};
 
-  let i = 0;
-  while (i < routes.length) {
-    const r = routes[i++];
+  for (const r of routes) {
     const { template, parameters } = path_to_openapi_template(r.path);
     const openapi_method = method_to_openapi_method(r.method);
     const definition = r.openapi;
 
-    const path_entry = (paths[template] ??= Object.create(null)) as Record<
-      string,
-      unknown
-    >;
-
+    const path_entry = (paths[template] ??= {}) as Record<string, unknown>;
     const existing_op =
       path_entry[openapi_method] &&
       typeof path_entry[openapi_method] === "object"
@@ -94,12 +86,10 @@ export function generate_openapi_spec(
         ? (existing_op.responses as Record<string, unknown>)
         : {};
 
-    const responses: Record<string, unknown> = Object.create(null);
+    const responses: Record<string, unknown> = {};
     if (definition?.responses && typeof definition.responses === "object") {
       const keys = Object.keys(definition.responses);
-      let j = 0;
-      while (j < keys.length) {
-        const status = keys[j++];
+      for (const status of keys) {
         const r_def = definition.responses[status];
         const description = r_def?.description ?? "OK";
         const content_type = r_def?.contentType ?? "application/json";
@@ -113,17 +103,12 @@ export function generate_openapi_spec(
               },
             },
           };
-        } else {
-          responses[status] = { description };
-        }
+        } else responses[status] = { description };
       }
     } else if (Object.keys(existing_responses).length) {
-      let k = 0;
       const e_keys = Object.keys(existing_responses);
-      while (k < e_keys.length) {
-        const status = e_keys[k++];
+      for (const status of e_keys)
         responses[status] = existing_responses[status];
-      }
     } else responses["200"] = { description: "OK" };
 
     const request_body = definition?.requestBody?.schema

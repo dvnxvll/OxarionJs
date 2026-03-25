@@ -3,19 +3,12 @@ export class ParsedFormData {
   private readonly files: Record<string, File[]> = {};
 
   constructor(form: FormData) {
-    const entries = Array.from(form.entries());
-    let i = 0;
-
-    while (i < entries.length) {
-      const [key, value] = entries[i];
-
+    for (const [key, value] of form) {
       if (typeof value === "string") this.fields[key] = value;
-      else if ((value as unknown) instanceof File) {
+      else if (value instanceof File) {
         if (!this.files[key]) this.files[key] = [];
         this.files[key].push(value);
       }
-
-      i++;
     }
   }
 
@@ -79,14 +72,8 @@ export class ParsedFormData {
    */
   getMimeTypes(): Record<string, string[]> {
     const result: Record<string, string[]> = {};
-    const entries = Object.entries(this.files);
-    let i = 0;
-
-    while (i < entries.length) {
-      const [key, files] = entries[i];
-      result[key] = files.map((f) => f.type);
-      i++;
-    }
+    for (const key in this.files)
+      result[key] = this.files[key].map((f) => f.type);
 
     return result;
   }

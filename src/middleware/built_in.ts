@@ -55,33 +55,37 @@ export function urlencoded(options: { extended?: boolean } = {}): MiddlewareFn {
     const raw = await req.text();
     const body: Record<string, string | string[]> = Object.create(null);
 
+    if (!raw) {
+      req.__oxarion_set_body(body);
+      await next();
+      return;
+    }
+
+    const pairs = raw.split("&");
     let i = 0;
-    while (i < raw.length) {
-      let key = "";
-      let value = "";
 
-      while (i < raw.length && raw[i] !== "=" && raw[i] !== "&")
-        key += raw[i++];
+    while (i < pairs.length) {
+      const pair = pairs[i];
+      const eq = pair.indexOf("=");
+      let key: string;
+      let value: string;
 
-      if (i < raw.length && raw[i] === "=") i++;
-      while (i < raw.length && raw[i] !== "&") value += raw[i++];
-
-      if (i < raw.length && raw[i] === "&") i++;
+      if (eq === -1) {
+        key = decodeURIComponent(pair);
+        value = "";
+      } else {
+        key = decodeURIComponent(pair.slice(0, eq));
+        value = decodeURIComponent(pair.slice(eq + 1));
+      }
 
       if (key) {
-        const decodedKey = decodeURIComponent(key);
-        const decodedValue = decodeURIComponent(value);
-
-        if (options.extended && decodedKey.endsWith("[]")) {
-          const cleanKey = decodedKey.slice(0, -2);
-          if (!body[cleanKey]) {
-            body[cleanKey] = [];
-          }
-          (body[cleanKey] as string[]).push(decodedValue);
-        } else {
-          body[decodedKey] = decodedValue;
-        }
+        if (options.extended && key.endsWith("[]")) {
+          const cleanKey = key.slice(0, -2);
+          if (!Array.isArray(body[cleanKey])) body[cleanKey] = [];
+          (body[cleanKey] as string[]).push(value);
+        } else body[key] = value;
       }
+      i++;
     }
 
     req.__oxarion_set_body(body);

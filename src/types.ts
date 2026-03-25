@@ -54,6 +54,7 @@ export interface Route {
   segments: string[];
   paramNames: string[];
   isStatic: boolean;
+  path: string;
   openapi?: OpenApiRouteDefinition;
 }
 

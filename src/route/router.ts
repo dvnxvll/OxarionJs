@@ -17,15 +17,44 @@ import { parse_url_path } from "../utils/parse_url";
 import { extname, resolve, sep } from "path";
 import { OxarionResponse } from "../handler/response";
 import { generate_openapi_spec } from "../openapi/generate_openapi";
+import { SimpleLRU } from "../utils/simple_lru";
+
+const CWD = process.cwd();
+
+const ext_content_type = (file_path: string): string => {
+  const ext = extname(file_path).toLowerCase();
+  if (ext === ".html") return "text/html; charset=utf-8";
+  if (ext === ".txt") return "text/plain; charset=utf-8";
+  if (ext === ".js") return "text/javascript; charset=utf-8";
+  if (ext === ".css") return "text/css; charset=utf-8";
+  if (ext === ".json") return "application/json; charset=utf-8";
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".svg") return "image/svg+xml";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  return "application/octet-stream";
+};
+
+const build_rel_path = (
+  segments: string[] | undefined,
+  index_file: string,
+): string => {
+  if (!segments || !segments.length) return index_file;
+  let rel = segments[0];
+  let i = 1;
+  while (i < segments.length) rel += "/" + segments[i++];
+  return rel;
+};
 
 export class Router {
   private routes: Route[] = [];
-  private route_cache = new Map<string, Route>();
+  private static_routes = new Map<string, Route>();
+  private match_cache = new SimpleLRU<
+    string,
+    [Route, Record<string, string | string[]>]
+  >(1000);
   private ws_routes = new Map<string, boolean>();
-
-  private route_path_from_segments(segments: string[]) {
-    return "/" + segments.join("/");
-  }
 
   private clean_base_path(path: string): string {
     if (path === "/") return "/";
@@ -114,6 +143,37 @@ export class Router {
     };
   }
 
+  private parse_path_segments(path: string): {
+    segments: string[];
+    paramNames: string[];
+    isStatic: boolean;
+  } {
+    const segments: string[] = [];
+    const paramNames: string[] = [];
+    let isStatic = true;
+    let i = 1;
+    let start = 1;
+
+    while (i <= path.length) {
+      if (i === path.length || path[i] === "/") {
+        if (i > start) {
+          const segment = path.slice(start, i);
+          segments.push(segment);
+          if (segment[0] === "[") {
+            isStatic = false;
+            const is_catch_all = segment.startsWith("[...");
+            paramNames.push(
+              is_catch_all ? segment.slice(4, -1) : segment.slice(1, -1),
+            );
+          }
+        }
+        start = i + 1;
+      }
+      i++;
+    }
+    return { segments, paramNames, isStatic };
+  }
+
   /**
    * Registers a route handler for a specific HTTP method and path.
    * @template Path - The route path string type.
@@ -140,42 +200,21 @@ export class Router {
         `[Oxarion] addHandler: path must start with '/', received: "${path}"`,
       );
 
-    const segments: string[] = [];
-    const param_names: string[] = [];
-    let is_static = true;
-    let i = 1;
-    let start = 1;
-
-    while (i <= path.length) {
-      if (i === path.length || path[i] === "/") {
-        if (i > start) {
-          const segment = path.slice(start, i);
-          segments.push(segment);
-          if (segment[0] === "[") {
-            is_static = false;
-            const is_catch_all = segment.startsWith("[...");
-            param_names.push(
-              is_catch_all ? segment.slice(4, -1) : segment.slice(1, -1),
-            );
-          }
-        }
-        start = i + 1;
-      }
-      i++;
-    }
+    const { segments, paramNames, isStatic } = this.parse_path_segments(path);
 
     const route: Route = {
       method,
       handler: handler as Handler,
       segments,
-      paramNames: param_names,
-      isStatic: is_static,
+      paramNames,
+      isStatic,
+      path,
     };
 
     this.routes.push(route);
 
-    if (is_static) {
-      this.route_cache.set(`${method}:${path}`, route);
+    if (isStatic) {
+      this.static_routes.set(`${method}:${path}`, route);
     }
   }
 
@@ -207,44 +246,21 @@ export class Router {
         `[Oxarion] addHandlerOpenApi: path must start with '/', received: "${path}"`,
       );
 
-    const segments: string[] = [];
-    const param_names: string[] = [];
-    let is_static = true;
-    let i = 1;
-    let start = 1;
-
-    while (i <= path.length) {
-      if (i === path.length || path[i] === "/") {
-        if (i > start) {
-          const segment = path.slice(start, i);
-          segments.push(segment);
-          if (segment[0] === "[") {
-            is_static = false;
-            const is_catch_all = segment.startsWith("[...");
-            param_names.push(
-              is_catch_all ? segment.slice(4, -1) : segment.slice(1, -1),
-            );
-          }
-        }
-        start = i + 1;
-      }
-      i++;
-    }
+    const { segments, paramNames, isStatic } = this.parse_path_segments(path);
 
     const route: Route = {
       method,
       handler: handler as Handler,
       segments,
-      paramNames: param_names,
-      isStatic: is_static,
+      paramNames,
+      isStatic,
+      path,
       openapi,
     };
 
     this.routes.push(route);
 
-    if (is_static) {
-      this.route_cache.set(`${method}:${path}`, route);
-    }
+    if (isStatic) this.static_routes.set(`${method}:${path}`, route);
   }
 
   /**
@@ -280,31 +296,8 @@ export class Router {
       );
 
     const normalized_prefix = prefix === "/" ? "/" : prefix.replace(/\/+$/, "");
-    const static_root = resolve(process.cwd(), dir);
+    const static_root = resolve(CWD, dir);
     const index_file = options.indexFile ?? "index.html";
-
-    const ext_content_type = (file_path: string): string => {
-      const ext = extname(file_path).toLowerCase();
-      if (ext === ".html") return "text/html; charset=utf-8";
-      if (ext === ".txt") return "text/plain; charset=utf-8";
-      if (ext === ".js") return "text/javascript; charset=utf-8";
-      if (ext === ".css") return "text/css; charset=utf-8";
-      if (ext === ".json") return "application/json; charset=utf-8";
-      if (ext === ".png") return "image/png";
-      if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
-      if (ext === ".svg") return "image/svg+xml";
-      if (ext === ".webp") return "image/webp";
-      if (ext === ".gif") return "image/gif";
-      return "application/octet-stream";
-    };
-
-    const build_rel_path = (segments: string[] | undefined): string => {
-      if (!segments || !segments.length) return index_file;
-      let rel = segments[0];
-      let i = 1;
-      while (i < segments.length) rel += "/" + segments[i++];
-      return rel;
-    };
 
     const catch_all_route =
       normalized_prefix === "/"
@@ -324,10 +317,10 @@ export class Router {
       req: OxarionRequest<any>,
       res: OxarionResponse,
     ) => {
-      const project_root = resolve(process.cwd());
+      const project_root = resolve(CWD);
       const full_path = (() => {
         const segments = (req.getParam("path") as string[] | undefined) || [];
-        const rel = build_rel_path(segments);
+        const rel = build_rel_path(segments, index_file);
         const resolved = resolve(static_root, rel);
         const inside_static_root =
           resolved === static_root || resolved.startsWith(static_root + sep);
@@ -461,7 +454,7 @@ export class Router {
     let i = this.routes.length;
     while (i--) {
       const route = this.routes[i];
-      const path = this.route_path_from_segments(route.segments);
+      const path = route.path;
       if (!allRoutes && !path.startsWith(base)) continue;
 
       const current_handler = route.handler;
@@ -505,7 +498,7 @@ export class Router {
     let i = this.routes.length;
     while (i--) {
       const route = this.routes[i];
-      const path = this.route_path_from_segments(route.segments);
+      const path = route.path;
       if (!allRoutes && !path.startsWith(base)) continue;
 
       const current_handler = route.handler;
@@ -570,8 +563,16 @@ export class Router {
     pathname: string,
   ): [Route, Record<string, string | string[]>] | null {
     const cache_key = `${method}:${pathname}`;
-    const cached = this.route_cache.get(cache_key);
-    if (cached) return [cached, {}];
+
+    const cached = this.match_cache.get(cache_key);
+    if (cached) return cached;
+
+    const static_route = this.static_routes.get(cache_key);
+    if (static_route) {
+      const result: [Route, Record<string, string>] = [static_route, {}];
+      this.match_cache.set(cache_key, result);
+      return result;
+    }
 
     const url_segments: string[] = [];
     let i = 1,
@@ -587,14 +588,14 @@ export class Router {
     let r = 0;
     while (r < this.routes.length) {
       const route = this.routes[r++];
-      if (route.method !== method) continue;
 
-      const params: Record<string, string | string[]> = {};
       const segs = route.segments;
       const has_catch_all = segs.some((s) => s.startsWith("[..."));
 
       if (!has_catch_all && segs.length !== url_segments.length) continue;
+      if (route.method !== method) continue;
 
+      const params: Record<string, string | string[]> = {};
       let matched = true;
       let seg_i = 0;
       let url_i = 0;
@@ -613,7 +614,14 @@ export class Router {
         url_i++;
       }
 
-      if (matched) return [route, params];
+      if (matched) {
+        const result: [Route, Record<string, string | string[]>] = [
+          route,
+          params,
+        ];
+        this.match_cache.set(cache_key, result);
+        return result;
+      }
     }
 
     return null;
@@ -636,7 +644,7 @@ export class Router {
       const r = this.routes[i];
       result[i] = {
         method: r.method,
-        path: this.route_path_from_segments(r.segments),
+        path: r.path,
         handler: r.handler,
         openapi: r.openapi,
       };
@@ -656,7 +664,7 @@ export class Router {
     while (i--) {
       const route = this.routes[i];
       if (route.method !== method) continue;
-      if (this.route_path_from_segments(route.segments) === path) return true;
+      if (route.path === path) return true;
     }
 
     return false;
@@ -676,18 +684,22 @@ export class Router {
     while (i--) {
       const route = this.routes[i];
       if (route.method !== method) continue;
-      if (this.route_path_from_segments(route.segments) !== path) continue;
+      if (route.path !== path) continue;
 
       this.routes.splice(i, 1);
       removed++;
     }
 
-    if (removed) this.route_cache.delete(`${method}:${path}`);
+    if (removed) {
+      this.static_routes.delete(`${method}:${path}`);
+      this.match_cache.clear();
+    }
     return removed;
   }
 
   cleanup() {
-    this.route_cache.clear();
+    this.match_cache.clear();
+    this.static_routes.clear();
     this.routes.length = 0;
   }
 }

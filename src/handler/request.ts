@@ -19,45 +19,12 @@ export class OxarionRequest<TParams extends Record<string, any>> {
     const cookie_header = this.raw.headers.get("cookie");
     if (!cookie_header) return {};
 
-    const result: Record<string, string> = Object.create(null);
-
-    let i = 0;
-    const len = cookie_header.length;
-
-    while (i < len) {
-      while (
-        i < len &&
-        (cookie_header.charCodeAt(i) === 32 || cookie_header[i] === ";")
-      )
-        i++;
-
-      if (i >= len) break;
-
-      let name_end = i;
-      while (name_end < len) {
-        const c = cookie_header[name_end];
-        if (c === "=" || c === ";") break;
-        name_end++;
-      }
-
-      if (name_end >= len || cookie_header[name_end] !== "=") {
-        while (i < len && cookie_header[i] !== ";") i++;
-        continue;
-      }
-
-      const name = cookie_header.slice(i, name_end).trim();
-      i = name_end + 1;
-
-      let value_end = i;
-      while (value_end < len && cookie_header[value_end] !== ";") value_end++;
-
-      const raw_value = cookie_header.slice(i, value_end).trim();
-      if (name) result[name] = raw_value;
-
-      i = value_end + 1;
-    }
-
-    return result;
+    return Object.fromEntries(
+      cookie_header.split(";").map((c) => {
+        const [key, ...v] = c.split("=");
+        return [key.trim(), v.join("=").trim()];
+      }),
+    );
   }
 
   /**
@@ -208,17 +175,7 @@ export class OxarionRequest<TParams extends Record<string, any>> {
    * Returns all request headers as a lowercase key-value object.
    */
   getHeaders(): Record<string, string> {
-    const result: Record<string, string> = {};
-    const entries = Array.from(this.raw.headers.entries());
-    let i = 0;
-
-    while (i < entries.length) {
-      const [key, value] = entries[i];
-      result[key.toLowerCase()] = value;
-      i++;
-    }
-
-    return result;
+    return Object.fromEntries(this.raw.headers);
   }
 
   /**
@@ -233,30 +190,6 @@ export class OxarionRequest<TParams extends Record<string, any>> {
    * Returns all query parameters as a key-value object.
    */
   getQueries<T extends Record<string, string> = Record<string, string>>(): T {
-    const url = this.raw.url;
-    const qmark = url.indexOf("?");
-    if (qmark === -1 || qmark === url.length - 1) return {} as T;
-
-    const qstr = url.slice(qmark + 1);
-    const result: Record<string, string> = {};
-
-    let i = 0;
-    while (i < qstr.length) {
-      let amp = qstr.indexOf("&", i);
-      if (amp === -1) amp = qstr.length;
-
-      const pair = qstr.slice(i, amp);
-      const eq = pair.indexOf("=");
-
-      if (eq !== -1) {
-        const key = decodeURIComponent(pair.slice(0, eq));
-        const val = decodeURIComponent(pair.slice(eq + 1));
-        result[key] = val;
-      }
-
-      i = amp + 1;
-    }
-
-    return result as T;
+    return Object.fromEntries(new URL(this.raw.url).searchParams) as T;
   }
 }

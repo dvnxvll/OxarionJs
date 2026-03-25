@@ -7,6 +7,7 @@ test/
 **/*.spec.ts
 pages/
 BRIEF.md
+Optimization.md
 temp-files
 
 # Logs

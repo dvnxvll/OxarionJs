@@ -55,3 +55,13 @@
 - Upgraded `res.sendFile()` to stream files and support conditional requests via `ETag` and `Last-Modified`
 - Updated 'README.md'
 - Added Route Injector docs for modular route organization with `RoutesWrapper` and `injectWrapper`
+
+# Version 1.3.1
+- Optimized `Router` with O(1) static route lookup and LRU cache for dynamic matches
+- Optimized `OxarionRequest` cookie parsing, query parsing, and header iteration
+- Optimized `ParsedFormData` to avoid unnecessary array allocations
+- Optimized `urlencoded` middleware to avoid string concatenation in loops
+- Optimized `generate_openapi_spec` to reduce loop nesting and object allocations
+- Fixed `process.cwd()` caching in Router
+- Refactored duplicate path parsing logic in Router
+- Removed unused `route_path_from_segments` method from Router
