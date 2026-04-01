@@ -1,5 +1,5 @@
 import type { MiddlewareFn, RateLimitEntry, RateLimitOptions } from "../types";
-import type { OxarionRequest } from "../handler/request";
+import type { OxarionRequest } from "../adapter/http/request";
 
 export function rateLimit(options: RateLimitOptions): MiddlewareFn {
   if (typeof options !== "object" || options === null)

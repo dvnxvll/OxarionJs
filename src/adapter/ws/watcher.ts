@@ -1,4 +1,4 @@
-import type { WSHandler } from "../types";
+import type { WSHandler } from "../../types";
 
 export class WSWatcher {
   private routes: Map<string, WSHandler> = new Map();

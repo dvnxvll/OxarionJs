@@ -23,13 +23,29 @@ await Oxarion.start({
 
 - `httpHandler: (router) => void`
 - `safeMwRegister?: (router) => void`
-- `notFoundHandler?: (req, res) => void | Response`
-- `errorHandler?: (error, req, res) => void | Response`
+- `notFoundHandler?: (req, res) => void | Response | OxarionResponse`
+- `errorHandler?: (error, req, res) => void | Response | OxarionResponse`
 
 ## Static Pages
 
 - `pagesDir?: string`
 - `cachePages?: boolean`
+
+## Templates
+
+- `template?: TemplateOptions`
+
+```ts
+type TemplateOptions = {
+  enabled?: boolean
+  pagesDir?: string
+  fragmentsDir?: string
+  layoutsDir?: string
+  cache?: boolean
+  autoEscape?: boolean
+  extension?: string
+}
+```
 
 ## Runtime Behavior
 
@@ -58,7 +74,7 @@ type DynamicRoutingOptions = {
 ## Full Example
 
 ```ts
-import Oxarion, { Middleware, OxarionResponse } from "oxarionjs"
+import Oxarion, { Middleware } from "oxarionjs"
 
 await Oxarion.start({
   host: "127.0.0.1",
@@ -67,6 +83,11 @@ await Oxarion.start({
   checkLatestVersion: false,
   pagesDir: "pages",
   cachePages: true,
+  template: {
+    pagesDir: "pages",
+    fragmentsDir: "fragments",
+    cache: true,
+  },
   dynamicRouting: {
     dir: "dyn",
     handlerFile: "api",
@@ -81,11 +102,11 @@ await Oxarion.start({
   safeMwRegister: (router) => {
     router.multiMiddleware("/", [Middleware.cors(), Middleware.logger()], true)
   },
-  notFoundHandler: () => {
-    return OxarionResponse.json({ error: "not found" }, { status: 404 })
+  notFoundHandler: (_req, res) => {
+    return res.json({ error: "not found" }, { status: 404 })
   },
-  errorHandler: (error) => {
-    return OxarionResponse.json(
+  errorHandler: (error, _req, res) => {
+    return res.json(
       { error: error instanceof Error ? error.message : "unknown" },
       { status: 500 }
     )

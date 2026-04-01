@@ -1,12 +1,19 @@
-import { ParsedFormData } from "../form_data";
+import { ParsedFormData } from "../../form_data";
+import type { ServiceContainer, ServiceMap } from "../../types";
+import { service_get, service_has } from "./service/container";
 
-export class OxarionRequest<TParams extends Record<string, any>> {
+export class OxarionRequest<
+  TParams extends Record<string, any>,
+  TServices extends ServiceMap = ServiceMap,
+> {
   constructor(
     public readonly raw: Request,
     private readonly params: TParams,
+    private readonly services: ServiceContainer | null = null,
   ) {}
 
   private _cookies_cache: Record<string, string> | null = null;
+  private _queries_cache: Record<string, string> | null = null;
 
   private _body: unknown | null = null;
   private _body_is_set = false;
@@ -14,6 +21,7 @@ export class OxarionRequest<TParams extends Record<string, any>> {
   private _session_id: string | null = null;
   private _session_data: Record<string, unknown> | null = null;
   private _session_modified = false;
+  private _csrf_token: string | null = null;
 
   private parse_cookies(): Record<string, string> {
     const cookie_header = this.raw.headers.get("cookie");
@@ -94,6 +102,13 @@ export class OxarionRequest<TParams extends Record<string, any>> {
     return this._session_modified;
   }
 
+  /**
+   * Gets the active CSRF token (if csrf middleware is enabled).
+   */
+  getCsrfToken(): string | undefined {
+    return this._csrf_token ?? undefined;
+  }
+
   __oxarion_set_session_state(
     session_id: string | null,
     session_data: Record<string, unknown>,
@@ -101,6 +116,10 @@ export class OxarionRequest<TParams extends Record<string, any>> {
     this._session_id = session_id;
     this._session_data = session_data;
     this._session_modified = false;
+  }
+
+  __oxarion_set_csrf_token(token: string) {
+    this._csrf_token = token;
   }
 
   /**
@@ -186,10 +205,27 @@ export class OxarionRequest<TParams extends Record<string, any>> {
     return this.getQueries()[name];
   }
 
+  private parse_queries(): Record<string, string> {
+    return Object.fromEntries(new URL(this.raw.url).searchParams) as Record<
+      string,
+      string
+    >;
+  }
+
   /**
    * Returns all query parameters as a key-value object.
    */
   getQueries<T extends Record<string, string> = Record<string, string>>(): T {
-    return Object.fromEntries(new URL(this.raw.url).searchParams) as T;
+    if (this._queries_cache) return this._queries_cache as T;
+    this._queries_cache = this.parse_queries();
+    return this._queries_cache as T;
+  }
+
+  hasService(name: string): boolean {
+    return service_has(this.services, name);
+  }
+
+  getService<TKey extends keyof TServices>(name: TKey): TServices[TKey] {
+    return service_get(this.services, String(name)) as TServices[TKey];
   }
 }

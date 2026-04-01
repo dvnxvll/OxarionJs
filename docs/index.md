@@ -12,8 +12,11 @@ This folder contains practical guides and API usage for OxarionJs
 - [Routing](./routing.md)
 - [Route Injector](./route_injector.md)
 - [Dynamic Routing](./dynamic_routing.md)
+- [SSR Templates](./ssr_templates.md)
+- [Dynamic HTML](./dynamic_html.md)
 - [Middleware](./middleware.md)
 - [Request And Response](./request_and_response.md)
+- [Production Deployment](./production_deployment.md)
 - [WebSocket](./websocket.md)
 - [Api Reference](./api_reference.md)
 
@@ -26,6 +29,8 @@ This folder contains practical guides and API usage for OxarionJs
 - HTTP router with static, dynamic, and catch all params
 - Route groups with shared prefix and middleware
 - File based dynamic routing with `api.ts` or `api.js` using function exports or static class methods
+- Cached SSR template rendering with `res.render()` and `res.renderFragment()`
+- Optional dynamic HTML runtime with `ox-*` attributes and `router.serveOx()`
 - Middleware pipeline with built in helpers
 - Custom `notFoundHandler` and `errorHandler`
 - `OxarionResponse` instance and static helper style

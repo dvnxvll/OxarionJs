@@ -30,6 +30,7 @@ It keeps the flow direct, the API clean, and the abstractions where they actuall
 - File-based dynamic routing
 - Request and response helpers
 - Native WebSocket route support
+- Cached SSR templates and optional Ox dynamic HTML runtime
 - Minimal flow without high-level clutter
 
 ## Install
@@ -84,11 +85,11 @@ await Oxarion.start({
 Route modules can export HTTP method functions or a static class.
 
 ```ts
-import { OxarionResponse, type OxarionRequest } from "oxarionjs";
+import type { OxarionRequest, OxarionResponse } from "oxarionjs";
 
 export default class TestApi {
-  static async GET(req: OxarionRequest, _res: OxarionResponse) {
-    return OxarionResponse.json({ path: req.url() });
+  static async GET(req: OxarionRequest, res: OxarionResponse) {
+    return res.json({ path: req.url() });
   }
 }
 ```
@@ -110,7 +111,7 @@ For a single endpoint sample from the local benchmark runner:
 
 | Endpoint      | Framework | Req/Sec | Avg Latency | P99 Latency |
 | ------------- | --------- | ------: | ----------: | ----------: |
-| JSON Response | Oxarion   |  254320 |    0.785 ms |    1.140 ms |
+| JSON Response | Oxarion   |  255271 |    0.785 ms |    1.140 ms |
 
 The full generated benchmark report is written to [`benchmarks/Results.md`](./benchmarks/Results.md).
 
@@ -137,6 +138,7 @@ Start here if you want the full guide.
 - [Dynamic routing](./docs/dynamic_routing.md)
 - [Middleware](./docs/middleware.md)
 - [Request and response](./docs/request_and_response.md)
+- [Production deployment](./docs/production_deployment.md)
 - [WebSocket](./docs/websocket.md)
 - [API reference](./docs/api_reference.md)
 - [Testing and benchmarking](./docs/testing_and_benchmarking.md)

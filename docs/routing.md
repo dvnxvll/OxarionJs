@@ -82,7 +82,7 @@ router.injectWrapper("/account", account_routes);
 
 ## Handler Return Style
 
-You can mutate `res` or return a native `Response`
+You can mutate `res`, return `res.*(...)`, or return a native `Response`
 
 ```ts
 import { OxarionResponse } from "oxarionjs";
@@ -91,7 +91,11 @@ router.addHandler("GET", "/legacy", (_req, res) => {
   res.send("legacy style");
 });
 
-router.addHandler("GET", "/next-style", () => {
+router.addHandler("GET", "/return-instance", (_req, res) => {
+  return res.json({ ok: true }, { status: 200 });
+});
+
+router.addHandler("GET", "/return-static", () => {
   return OxarionResponse.json({ ok: true }, { status: 200 });
 });
 ```

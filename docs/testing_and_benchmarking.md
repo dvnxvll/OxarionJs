@@ -49,6 +49,47 @@ oha --version
 bun run benchmarks/run-benchmark.ts
 ```
 
+## Run the SSR and Ox runtime benchmark
+
+This dedicated benchmark focuses on the new production paths:
+- cached full-page SSR
+- cached fragment rendering
+- hashed `router.serveOx()` runtime asset
+- session + CSRF protected fragment mutation path
+
+```bash
+bun run benchmarks/run-ssr-runtime-benchmark.ts
+```
+
+Environment overrides:
+
+```bash
+OX_BENCH_DURATION=30 \
+OX_BENCH_WARMUP=5 \
+OX_BENCH_CONCURRENCY=200 \
+bun run benchmarks/run-ssr-runtime-benchmark.ts
+```
+
+Output:
+
+```text
+benchmarks/OxRuntimeResults.md
+```
+
+## Run the gated live Redis integration test
+
+This test starts a temporary Redis container and verifies that a session survives across separate app instances.
+
+Requirements:
+- Docker
+- Redis image pull access
+
+Command:
+
+```bash
+bash tests/integration/redis_check.sh
+```
+
 ## What the benchmark covers
 
 The current benchmark suite compares the same set of endpoints across all tested frameworks:

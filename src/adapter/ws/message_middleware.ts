@@ -2,7 +2,7 @@ import type {
   WSMessageContext,
   WSMessageFinalHandler,
   WSMessageMiddlewareFn,
-} from "../types";
+} from "../../types";
 
 export function compose_ws_message_middleware(
   middlewares: WSMessageMiddlewareFn[],

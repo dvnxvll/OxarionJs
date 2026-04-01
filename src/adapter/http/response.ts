@@ -1,19 +1,58 @@
 import { readFile, stat } from "fs/promises";
 import { resolve, sep } from "path";
-import type { PageCompression, SendFileOptions } from "../types";
+import type {
+  PageCompression,
+  RenderData,
+  RenderOptions,
+  SendFileOptions,
+  SseHandler,
+  StreamHandler,
+} from "../../types";
+import type { TemplateEngine } from "./template";
 
 const page_cache = new Map<string, string>();
+const json_content_type = { "Content-Type": "application/json" };
+const text_content_type = { "Content-Type": "text/plain; charset=utf-8" };
+const html_content_type = { "Content-Type": "text/html; charset=utf-8" };
+const text_encoder = new TextEncoder();
 
 export class OxarionResponse {
   private _status = 200;
-  private _headers = new Headers();
+  private _status_text: string | undefined = undefined;
+  private _headers: Headers | null = null;
   private _body: BodyInit | null = null;
 
   constructor(
     private readonly pages_dir_name: string,
     private readonly cache_pages: boolean,
     private readonly _req: Request,
+    private readonly template_engine: TemplateEngine | null = null,
   ) {}
+
+  private ensure_headers(): Headers {
+    if (this._headers) return this._headers;
+    this._headers = new Headers();
+    return this._headers;
+  }
+
+  private apply_init(init?: ResponseInit) {
+    if (!init) return this;
+    if (init.status !== undefined) this.setStatus(init.status);
+    if (init.statusText !== undefined) {
+      if (typeof init.statusText !== "string")
+        throw new TypeError(
+          "[Oxarion] response init: statusText must be a string",
+        );
+      this._status_text = init.statusText;
+    }
+    if (init.headers !== undefined) {
+      const headers = new Headers(init.headers);
+      headers.forEach((value, key) => {
+        this.ensure_headers().set(key, value);
+      });
+    }
+    return this;
+  }
 
   setCookie(
     name: string,
@@ -57,7 +96,7 @@ export class OxarionResponse {
     if (options.sameSite)
       cookie += `; SameSite=${options.sameSite[0].toUpperCase()}${options.sameSite.slice(1)}`;
 
-    this._headers.append("Set-Cookie", cookie);
+    this.ensure_headers().append("Set-Cookie", cookie);
     return this;
   }
 
@@ -79,18 +118,39 @@ export class OxarionResponse {
   }
 
   static json(obj: unknown, init: ResponseInit = {}) {
+    if (init.headers === undefined)
+      return new Response(JSON.stringify(obj), {
+        status: init.status,
+        statusText: init.statusText,
+        headers: json_content_type,
+      });
+
     const headers = new Headers(init.headers);
     headers.set("Content-Type", "application/json");
     return new Response(JSON.stringify(obj), { ...init, headers });
   }
 
   static text(body: string, init: ResponseInit = {}) {
+    if (init.headers === undefined)
+      return new Response(body, {
+        status: init.status,
+        statusText: init.statusText,
+        headers: text_content_type,
+      });
+
     const headers = new Headers(init.headers);
     headers.set("Content-Type", "text/plain; charset=utf-8");
     return new Response(body, { ...init, headers });
   }
 
   static html(body: string, init: ResponseInit = {}) {
+    if (init.headers === undefined)
+      return new Response(body, {
+        status: init.status,
+        statusText: init.statusText,
+        headers: html_content_type,
+      });
+
     const headers = new Headers(init.headers);
     headers.set("Content-Type", "text/html; charset=utf-8");
     return new Response(body, { ...init, headers });
@@ -145,7 +205,7 @@ export class OxarionResponse {
     if (typeof key !== "string" || typeof value !== "string")
       throw new TypeError("[Oxarion] setHeader: key and value must be strings");
 
-    this._headers.set(key, value);
+    this.ensure_headers().set(key, value);
     return this;
   }
 
@@ -173,7 +233,7 @@ export class OxarionResponse {
           "[Oxarion] setHeaders: all keys and values must be strings",
         );
 
-      this._headers.set(k, v);
+      this.ensure_headers().set(k, v);
     }
     return this;
   }
@@ -183,7 +243,7 @@ export class OxarionResponse {
    * @param body - The body to send.
    * @returns The current OxarionResponse instance.
    */
-  send(body: BodyInit) {
+  send(body: BodyInit, init?: ResponseInit) {
     if (
       typeof body !== "string" &&
       !(body instanceof ArrayBuffer) &&
@@ -195,6 +255,7 @@ export class OxarionResponse {
         "[Oxarion] send: body must be a string, ArrayBuffer, Uint8Array, Blob, or ReadableStream",
       );
 
+    this.apply_init(init);
     this._body = body;
     return this;
   }
@@ -204,9 +265,148 @@ export class OxarionResponse {
    * @param obj - The object to serialize as JSON.
    * @returns The current OxarionResponse instance.
    */
-  json(obj: unknown) {
-    this._headers.set("Content-Type", "application/json");
+  json(obj: unknown, init?: ResponseInit) {
+    this.apply_init(init);
+    this.ensure_headers().set("Content-Type", "application/json");
     this._body = JSON.stringify(obj);
+    return this;
+  }
+
+  text(body: string, init?: ResponseInit) {
+    if (typeof body !== "string")
+      throw new TypeError("[Oxarion] text: body must be a string");
+
+    this.apply_init(init);
+    this.ensure_headers().set("Content-Type", "text/plain; charset=utf-8");
+    this._body = body;
+    return this;
+  }
+
+  html(body: string, init?: ResponseInit) {
+    if (typeof body !== "string")
+      throw new TypeError("[Oxarion] html: body must be a string");
+
+    this.apply_init(init);
+    this.ensure_headers().set("Content-Type", "text/html; charset=utf-8");
+    this._body = body;
+    return this;
+  }
+
+  async render(
+    page: string,
+    data: RenderData = {},
+    options: RenderOptions = {},
+  ) {
+    if (!this.template_engine)
+      throw new Error(
+        "[Oxarion] render: template rendering is disabled. Enable it with the template option.",
+      );
+
+    const html = await this.template_engine.render_page(page, data);
+    return this.html(html, options);
+  }
+
+  async renderFragment(
+    fragment: string,
+    data: RenderData = {},
+    options: RenderOptions = {},
+  ) {
+    if (!this.template_engine)
+      throw new Error(
+        "[Oxarion] renderFragment: template rendering is disabled. Enable it with the template option.",
+      );
+
+    const html = await this.template_engine.render_fragment(fragment, data);
+    return this.html(html, options);
+  }
+
+  stream(handler: StreamHandler, init?: ResponseInit) {
+    if (typeof handler !== "function")
+      throw new TypeError("[Oxarion] stream: handler must be a function");
+
+    this.apply_init(init);
+    this._body = new ReadableStream({
+      async start(controller) {
+        let closed = false;
+        const writer = {
+          write: async (chunk: string | Uint8Array) => {
+            if (closed) return;
+            controller.enqueue(
+              typeof chunk === "string" ? text_encoder.encode(chunk) : chunk,
+            );
+          },
+          close: async () => {
+            if (closed) return;
+            closed = true;
+            controller.close();
+          },
+        };
+
+        try {
+          await handler(writer);
+          if (!closed) {
+            closed = true;
+            controller.close();
+          }
+        } catch (err) {
+          controller.error(err);
+        }
+      },
+    });
+    return this;
+  }
+
+  sse(handler: SseHandler, init?: ResponseInit) {
+    if (typeof handler !== "function")
+      throw new TypeError("[Oxarion] sse: handler must be a function");
+
+    this.apply_init(init);
+    this.ensure_headers().set("Content-Type", "text/event-stream");
+    this.ensure_headers().set("Cache-Control", "no-cache");
+    this.ensure_headers().set("Connection", "keep-alive");
+
+    this._body = new ReadableStream({
+      async start(controller) {
+        let closed = false;
+        const write_line = async (line: string) => {
+          if (closed) return;
+          controller.enqueue(text_encoder.encode(line));
+        };
+
+        const sse = {
+          send: async (event: string, data: unknown, id?: string) => {
+            let payload = "";
+            if (id !== undefined) payload += `id: ${id}\n`;
+            if (event) payload += `event: ${event}\n`;
+            const text =
+              typeof data === "string" ? data : JSON.stringify(data ?? null);
+            const lines = text.split("\n");
+            let i = 0;
+            while (i < lines.length) payload += `data: ${lines[i++]}\n`;
+            payload += "\n";
+            await write_line(payload);
+          },
+          comment: async (text: string) => {
+            await write_line(`: ${text}\n\n`);
+          },
+          close: async () => {
+            if (closed) return;
+            closed = true;
+            controller.close();
+          },
+        };
+
+        try {
+          await handler(sse);
+          if (!closed) {
+            closed = true;
+            controller.close();
+          }
+        } catch (err) {
+          controller.error(err);
+        }
+      },
+    });
     return this;
   }
 
@@ -230,7 +430,7 @@ export class OxarionResponse {
       );
 
     this._status = status;
-    this._headers.set("Location", url);
+    this.ensure_headers().set("Location", url);
     return this;
   }
 
@@ -247,7 +447,7 @@ export class OxarionResponse {
    * @returns The response headers as a Headers object.
    */
   getHeaders() {
-    return this._headers;
+    return this.ensure_headers();
   }
 
   /**
@@ -390,7 +590,7 @@ export class OxarionResponse {
 
       const use_etag = options.etag === true;
       const use_last_modified = options.lastModified === true;
-      if (contentType) this._headers.set("Content-Type", contentType);
+      if (contentType) this.ensure_headers().set("Content-Type", contentType);
 
       if (options.cacheControl) {
         if (typeof options.cacheControl !== "string")
@@ -398,7 +598,7 @@ export class OxarionResponse {
             "[Oxarion] sendFile: cacheControl must be a string if provided",
           );
 
-        this._headers.set("Cache-Control", options.cacheControl);
+        this.ensure_headers().set("Cache-Control", options.cacheControl);
       } else if (options.maxAgeSeconds !== undefined) {
         if (
           typeof options.maxAgeSeconds !== "number" ||
@@ -410,7 +610,7 @@ export class OxarionResponse {
             "[Oxarion] sendFile: maxAgeSeconds must be a non-negative integer",
           );
 
-        this._headers.set(
+        this.ensure_headers().set(
           "Cache-Control",
           `public, max-age=${options.maxAgeSeconds}, must-revalidate`,
         );
@@ -429,10 +629,11 @@ export class OxarionResponse {
         ? new Date(file_stat.mtimeMs).toUTCString()
         : undefined;
 
-      if (etag) this._headers.set("ETag", etag);
-      if (last_modified) this._headers.set("Last-Modified", last_modified);
-      this._headers.set("Accept-Ranges", "bytes");
-      this._headers.set("Content-Length", String(file_stat.size));
+      if (etag) this.ensure_headers().set("ETag", etag);
+      if (last_modified)
+        this.ensure_headers().set("Last-Modified", last_modified);
+      this.ensure_headers().set("Accept-Ranges", "bytes");
+      this.ensure_headers().set("Content-Length", String(file_stat.size));
 
       const if_none_match = this._req.headers.get("if-none-match");
       if (use_etag && if_none_match && etag) {
@@ -481,7 +682,8 @@ export class OxarionResponse {
   toResponse(): Response {
     return new Response(this._body, {
       status: this._status,
-      headers: this._headers,
+      statusText: this._status_text,
+      headers: this._headers || undefined,
     });
   }
 }

@@ -1,15 +1,17 @@
 node_modules/
 src/
 test/
+tests/
 pages/
 docs/
 assets/
 temp-files/
-benchmark/
+benchmarks/
 
 package-lock.json
 bun.lock
 tsconfig.json
+tsconfig.tsbuildinfo
 tsup.config.ts
 BRIEF.md
 Optimization.md

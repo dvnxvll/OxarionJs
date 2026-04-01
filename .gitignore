@@ -3,8 +3,6 @@
 bun.lock
 bun.lockb
 test/
-**/*.test.ts
-**/*.spec.ts
 pages/
 BRIEF.md
 Optimization.md

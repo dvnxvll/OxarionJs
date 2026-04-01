@@ -20,6 +20,7 @@ Inside every handler, `req` is `OxarionRequest`
 - `req.getCookie(name)`
 - `req.getSessionId()`
 - `req.getSessionValue(key)`
+- `req.getCsrfToken()`
 - `req.setSessionValue(key, value)`
 - `req.deleteSessionValue(key)`
 
@@ -27,11 +28,16 @@ Inside every handler, `req` is `OxarionRequest`
 
 `req.getCookies()` reads the raw cookie header  
 `Middleware.session()` populates session helpers on `req` and persists them with a cookie
+`Middleware.csrf()` populates `req.getCsrfToken()` when session middleware runs before it
 
 ```ts
-router.middleware(
+router.multiMiddleware(
   "/",
-  Middleware.session({ cookieName: "oxarion_session" }),
+  [
+    Middleware.session({ cookieName: "oxarion_session" }),
+    Middleware.csrf(),
+  ],
+  true,
 )
 ```
 
@@ -68,14 +74,24 @@ Useful methods
 - `res.setStatus(code)`
 - `res.setHeader(key, value)`
 - `res.setHeaders(headers)`
-- `res.send(body)`
-- `res.json(obj)`
+- `res.send(body, init?)`
+- `res.json(obj, init?)`
+- `res.text(body, init?)`
+- `res.html(body, init?)`
+- `await res.render(page, data?, options?)`
+- `await res.renderFragment(fragment, data?, options?)`
 - `res.redirect(url, status?)`
 - `res.setCookie(name, value, options?)`
 - `res.clearCookie(name, options?)`
 
-### Static Helpers For Return Style
+### Return Style
 
+- `return res.send(body, init?)`
+- `return res.json(data, init?)`
+- `return res.text(text, init?)`
+- `return res.html(html, init?)`
+- `return res.render(page, data?, options?)`
+- `return res.renderFragment(fragment, data?, options?)`
 - `OxarionResponse.json(data, init?)`
 - `OxarionResponse.text(text, init?)`
 - `OxarionResponse.html(html, init?)`
@@ -90,9 +106,37 @@ router.addHandler("GET", "/instance", (_req, res) => {
   res.setStatus(200).json({ style: "instance" })
 })
 
-router.addHandler("GET", "/return", () => {
-  return OxarionResponse.json({ style: "return" }, { status: 200 })
+router.addHandler("GET", "/return-instance", (_req, res) => {
+  return res.json({ style: "return-instance" }, { status: 200 })
 })
+
+router.addHandler("GET", "/return-static", () => {
+  return OxarionResponse.json({ style: "return-static" }, { status: 200 })
+})
+```
+
+## SSR Rendering
+
+```ts
+router.addHandler("GET", "/", (_req, res) => {
+  return res.render("home", {
+    title: "Home",
+    value: 12,
+  })
+})
+
+router.addHandler("GET", "/fragments/stats", (_req, res) => {
+  return res.renderFragment("stats", {
+    value: 13,
+  })
+})
+```
+
+Bindings inside templates use `ox.*`, for example:
+
+```html
+<h1>{ox.title}</h1>
+<div id="stats">{ox.value}</div>
 ```
 
 ## sendPage

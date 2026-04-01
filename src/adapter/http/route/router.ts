@@ -1,23 +1,30 @@
-import type { OxarionRequest } from "../handler/request";
+import type { OxarionRequest } from "../request";
 import type {
-  Route,
-  Method,
   ExtractRouteParams,
   Handler,
   HandlerResult,
+  HookMap,
+  HookName,
+  Method,
   MiddlewareFn,
-  OxarionRouter,
-  ServeStaticOptions,
-  ServeOpenApiOptions,
   OpenApiRouteDefinition,
-} from "../types";
+  OxarionRouter,
+  Route,
+  RouteHooks,
+  ServiceContainer,
+  ServiceMap,
+  ServeOpenApiOptions,
+  ServeStaticOptions,
+} from "../../../types";
 import { symbl_get_routes, type RoutesWrapper } from "./wrapper";
-import { compose_middleware } from "../utils/middleware";
-import { parse_url_path } from "../utils/parse_url";
-import { extname, resolve, sep } from "path";
-import { OxarionResponse } from "../handler/response";
+import { ox_runtime_js, ox_runtime_path } from "../dynamic_html";
+import { OxarionResponse } from "../response";
 import { generate_openapi_spec } from "../openapi/generate_openapi";
-import { SimpleLRU } from "../utils/simple_lru";
+import { create_service_container, service_has } from "../service/container";
+import { compose_middleware } from "../../../utils/middleware";
+import { parse_url_path } from "../../../utils/parse_url";
+import { SimpleLRU } from "../../../utils/simple_lru";
+import { extname, resolve, sep } from "path";
 
 const CWD = process.cwd();
 
@@ -47,14 +54,63 @@ const build_rel_path = (
   return rel;
 };
 
-export class Router {
-  private routes: Route[] = [];
-  private static_routes = new Map<string, Route>();
-  private match_cache = new SimpleLRU<
+type RouterShared = {
+  routes: Route[];
+  static_routes: Map<string, Route>;
+  match_cache: SimpleLRU<string, [Route, Record<string, string | string[]>]>;
+  ws_routes: Map<string, boolean>;
+  pending_tasks: Promise<unknown>[];
+  ox_runtime_registered: boolean;
+};
+
+type RouterScope<TServices extends ServiceMap = ServiceMap> = {
+  base_path: string;
+  middlewares: MiddlewareFn[];
+  services: ServiceContainer;
+  hooks: RouteHooks<TServices>;
+};
+
+const create_route_hooks = <TServices extends ServiceMap>(
+  parent?: RouteHooks<any>,
+): RouteHooks<TServices> => ({
+  onRequest: parent ? parent.onRequest.slice() : [],
+  preHandler: parent ? parent.preHandler.slice() : [],
+  onSend: parent ? parent.onSend.slice() : [],
+  onResponse: parent ? parent.onResponse.slice() : [],
+  onError: parent ? parent.onError.slice() : [],
+});
+
+const create_shared = (): RouterShared => ({
+  routes: [],
+  static_routes: new Map<string, Route>(),
+  match_cache: new SimpleLRU<
     string,
     [Route, Record<string, string | string[]>]
-  >(1000);
-  private ws_routes = new Map<string, boolean>();
+  >(1000),
+  ws_routes: new Map<string, boolean>(),
+  pending_tasks: [],
+  ox_runtime_registered: false,
+});
+
+let warned_inject_wrapper_deprecated = false;
+
+export class Router<
+  TServices extends ServiceMap = ServiceMap,
+> implements OxarionRouter<TServices> {
+  private readonly shared: RouterShared;
+  private readonly scope: RouterScope<TServices>;
+
+  constructor(shared?: RouterShared, scope?: RouterScope<TServices>) {
+    this.shared = shared || create_shared();
+    this.scope =
+      scope ||
+      ({
+        base_path: "",
+        middlewares: [],
+        services: create_service_container(),
+        hooks: create_route_hooks<TServices>(),
+      } as RouterScope<TServices>);
+  }
 
   private clean_base_path(path: string): string {
     if (path === "/") return "/";
@@ -72,75 +128,35 @@ export class Router {
     return base + path;
   }
 
+  private current_base(): string {
+    return this.scope.base_path || "/";
+  }
+
+  private resolve_path(path: string): string {
+    if (!this.scope.base_path) return path;
+    return this.join_paths(this.current_base(), path);
+  }
+
+  private create_child_router<TChildServices extends ServiceMap = TServices>(
+    base_path: string,
+    middlewares: MiddlewareFn[],
+    services: ServiceContainer,
+    hooks: RouteHooks<TChildServices>,
+  ): Router<TChildServices> {
+    return new Router<TChildServices>(this.shared, {
+      base_path,
+      middlewares,
+      services,
+      hooks,
+    });
+  }
+
   private wrap_handler_with_middleware(
     handler: Handler,
     middlewares: MiddlewareFn[],
   ): Handler {
     if (!middlewares.length) return handler;
     return (req, res) => compose_middleware(middlewares, handler)(req, res);
-  }
-
-  private create_group_router(
-    base: string,
-    middlewares: MiddlewareFn[],
-  ): OxarionRouter {
-    return {
-      addHandler: (method, path, handler) => {
-        const full_path = this.join_paths(base, path);
-        this.addHandler(
-          method,
-          full_path as any,
-          this.wrap_handler_with_middleware(handler as any, middlewares) as any,
-        );
-      },
-      addHandlerOpenApi: (method, path, handler, openapi) => {
-        const full_path = this.join_paths(base, path);
-        this.addHandlerOpenApi(
-          method,
-          full_path as any,
-          this.wrap_handler_with_middleware(handler as any, middlewares) as any,
-          openapi,
-        );
-      },
-      injectWrapper: (group_base, wrapper) => {
-        const full_base = this.join_paths(base, group_base);
-        this.injectWrapper(full_base, wrapper);
-      },
-      middleware: (group_base, middleware_fn, all_routes = false) => {
-        const target_base = all_routes
-          ? base
-          : this.join_paths(base, this.clean_base_path(group_base));
-        this.middleware(target_base, middleware_fn, false);
-      },
-      multiMiddleware: (group_base, chain, all_routes = false) => {
-        const target_base = all_routes
-          ? base
-          : this.join_paths(base, this.clean_base_path(group_base));
-        this.multiMiddleware(target_base, chain, false);
-      },
-      serveStatic: (prefix, dir, options) => {
-        this.serveStatic(this.join_paths(base, prefix), dir, options);
-      },
-      serveOpenApi: (spec_path, options) => {
-        this.serveOpenApi(this.join_paths(base, spec_path), options);
-      },
-      switchToWs: (path) => {
-        this.switchToWs(this.join_paths(base, path));
-      },
-      group: (group_base, callback, chain = []) => {
-        const full_base = this.join_paths(
-          base,
-          this.clean_base_path(group_base),
-        );
-        const full_chain =
-          middlewares.length && chain.length
-            ? middlewares.concat(chain)
-            : middlewares.length
-              ? middlewares
-              : chain;
-        callback(this.create_group_router(full_base, full_chain));
-      },
-    };
   }
 
   private parse_path_segments(path: string): {
@@ -174,18 +190,57 @@ export class Router {
     return { segments, paramNames, isStatic };
   }
 
-  /**
-   * Registers a route handler for a specific HTTP method and path.
-   * @template Path - The route path string type.
-   * @param method - The HTTP method (e.g., "GET", "POST").
-   * @param path - The route path (must start with "/").
-   * @param handler - The function to handle the request and response.
-   */
+  private add_route(route: Route) {
+    this.shared.routes.push(route);
+    if (route.isStatic)
+      this.shared.static_routes.set(`${route.method}:${route.path}`, route);
+    this.shared.match_cache.clear();
+  }
+
+  private clone_route(route: Route, path: string): Route {
+    const { segments, paramNames, isStatic } = this.parse_path_segments(path);
+    return {
+      method: route.method,
+      handler: route.handler,
+      segments,
+      paramNames,
+      isStatic,
+      path,
+      openapi: route.openapi,
+      scope: route.scope,
+    };
+  }
+
+  private mount_wrapper(base: string, wrapper: RoutesWrapper) {
+    const base_clean = base.replace(/\/$/, "") || "/";
+    const routes = wrapper[symbl_get_routes]();
+
+    let i = routes.length;
+    while (i--) {
+      const route = routes[i];
+      const path =
+        base_clean === "/"
+          ? route.path
+          : `${base_clean}/${route.path.replace(/^\//, "")}`;
+      this.add_route(this.clone_route(route, path));
+    }
+  }
+
+  get_service_container(): ServiceContainer {
+    return this.scope.services;
+  }
+
+  async await_pending_tasks() {
+    let i = 0;
+    while (i < this.shared.pending_tasks.length)
+      await this.shared.pending_tasks[i++];
+  }
+
   addHandler<Path extends string>(
     method: Method,
     path: Path,
     handler: (
-      req: OxarionRequest<ExtractRouteParams<Path>>,
+      req: OxarionRequest<ExtractRouteParams<Path>, TServices>,
       res: OxarionResponse,
     ) => HandlerResult | Promise<HandlerResult>,
   ) {
@@ -200,29 +255,29 @@ export class Router {
         `[Oxarion] addHandler: path must start with '/', received: "${path}"`,
       );
 
-    const { segments, paramNames, isStatic } = this.parse_path_segments(path);
+    const full_path = this.resolve_path(path);
+    const { segments, paramNames, isStatic } =
+      this.parse_path_segments(full_path);
 
-    const route: Route = {
+    this.add_route({
       method,
-      handler: handler as Handler,
+      handler: this.wrap_handler_with_middleware(
+        handler as Handler,
+        this.scope.middlewares,
+      ),
       segments,
       paramNames,
       isStatic,
-      path,
-    };
-
-    this.routes.push(route);
-
-    if (isStatic) {
-      this.static_routes.set(`${method}:${path}`, route);
-    }
+      path: full_path,
+      scope: this.scope,
+    });
   }
 
   addHandlerOpenApi<Path extends string>(
     method: Method,
     path: Path,
     handler: (
-      req: OxarionRequest<ExtractRouteParams<Path>>,
+      req: OxarionRequest<ExtractRouteParams<Path>, TServices>,
       res: OxarionResponse,
     ) => HandlerResult | Promise<HandlerResult>,
     openapi: OpenApiRouteDefinition,
@@ -246,28 +301,115 @@ export class Router {
         `[Oxarion] addHandlerOpenApi: path must start with '/', received: "${path}"`,
       );
 
-    const { segments, paramNames, isStatic } = this.parse_path_segments(path);
+    const full_path = this.resolve_path(path);
+    const { segments, paramNames, isStatic } =
+      this.parse_path_segments(full_path);
 
-    const route: Route = {
+    this.add_route({
       method,
-      handler: handler as Handler,
+      handler: this.wrap_handler_with_middleware(
+        handler as Handler,
+        this.scope.middlewares,
+      ),
       segments,
       paramNames,
       isStatic,
-      path,
+      path: full_path,
       openapi,
-    };
-
-    this.routes.push(route);
-
-    if (isStatic) this.static_routes.set(`${method}:${path}`, route);
+      scope: this.scope,
+    });
   }
 
-  /**
-   * Marks a route as a WebSocket endpoint.
-   * @param path - The WebSocket route path (must start with '/').
-   * @throws If path is not a string or does not start with '/'.
-   */
+  injectWrapper(base: string, wrapper: RoutesWrapper) {
+    if (typeof base !== "string")
+      throw new TypeError("[Oxarion] injectWrapper: base must be a string");
+    if (
+      typeof wrapper !== "object" ||
+      wrapper === null ||
+      typeof wrapper[symbl_get_routes] !== "function"
+    )
+      throw new TypeError(
+        "[Oxarion] injectWrapper: wrapper must be a RoutesWrapper",
+      );
+
+    if (!warned_inject_wrapper_deprecated) {
+      warned_inject_wrapper_deprecated = true;
+      console.warn(
+        "[Oxarion] router.injectWrapper() is deprecated and will be removed in 1.5.x; use router.mount() instead",
+      );
+    }
+    this.mount_wrapper(base, wrapper);
+  }
+
+  mount(base: string, wrapper: RoutesWrapper) {
+    if (typeof base !== "string")
+      throw new TypeError("[Oxarion] mount: base must be a string");
+    if (
+      typeof wrapper !== "object" ||
+      wrapper === null ||
+      typeof wrapper[symbl_get_routes] !== "function"
+    )
+      throw new TypeError("[Oxarion] mount: wrapper must be a RoutesWrapper");
+
+    this.mount_wrapper(base, wrapper);
+  }
+
+  register<TOptions = void>(
+    plugin: (
+      router: OxarionRouter<TServices>,
+      options: TOptions,
+    ) => void | Promise<void>,
+    ...args: TOptions extends void ? [] : [options: TOptions]
+  ) {
+    if (typeof plugin !== "function")
+      throw new TypeError("[Oxarion] register: plugin must be a function");
+
+    const child = this.create_child_router<TServices>(
+      this.scope.base_path,
+      this.scope.middlewares,
+      create_service_container(this.scope.services),
+      create_route_hooks<TServices>(this.scope.hooks),
+    );
+
+    const maybe_promise = plugin(child, args[0] as TOptions);
+    if (
+      maybe_promise &&
+      typeof (maybe_promise as Promise<void>).then === "function"
+    )
+      this.shared.pending_tasks.push(maybe_promise as Promise<void>);
+    return this;
+  }
+
+  hook<TName extends HookName>(name: TName, fn: HookMap<TServices>[TName]) {
+    if (
+      name !== "onRequest" &&
+      name !== "preHandler" &&
+      name !== "onSend" &&
+      name !== "onResponse" &&
+      name !== "onError"
+    )
+      throw new TypeError(
+        `[Oxarion] hook: unsupported hook name: ${String(name)}`,
+      );
+    if (typeof fn !== "function")
+      throw new TypeError("[Oxarion] hook: fn must be a function");
+
+    this.scope.hooks[name].push(fn as never);
+    return this;
+  }
+
+  provide<TKey extends string, TValue>(name: TKey, value: TValue) {
+    if (typeof name !== "string" || !name)
+      throw new TypeError("[Oxarion] provide: name must be a non-empty string");
+
+    this.scope.services.values.set(name, value);
+    return this as unknown as Router<TServices & Record<TKey, TValue>>;
+  }
+
+  hasService(name: string): boolean {
+    return service_has(this.scope.services, name);
+  }
+
   switchToWs(path: string) {
     if (typeof path !== "string")
       throw new TypeError("[Oxarion] switchToWs: path must be a string");
@@ -276,13 +418,9 @@ export class Router {
         `[Oxarion] switchToWs: path must start with '/', received: "${path}"`,
       );
 
-    this.ws_routes.set(path, true);
+    this.shared.ws_routes.set(this.resolve_path(path), true);
   }
 
-  /**
-   * Serves files from a directory under a given route prefix.
-   * Uses traversal protection and forwards caching to `res.sendFile()`.
-   */
   serveStatic(prefix: string, dir: string, options: ServeStaticOptions = {}) {
     if (typeof prefix !== "string")
       throw new TypeError("[Oxarion] serveStatic: prefix must be a string");
@@ -295,17 +433,16 @@ export class Router {
         `[Oxarion] serveStatic: prefix must start with '/', received: "${prefix}"`,
       );
 
-    const normalized_prefix = prefix === "/" ? "/" : prefix.replace(/\/+$/, "");
+    const full_prefix = this.resolve_path(prefix);
+    const normalized_prefix =
+      full_prefix === "/" ? "/" : full_prefix.replace(/\/+$/, "");
     const static_root = resolve(CWD, dir);
     const index_file = options.indexFile ?? "index.html";
-
     const catch_all_route =
       normalized_prefix === "/"
         ? "/[...path]"
         : `${normalized_prefix}/[...path]`;
-
     const index_route = normalized_prefix === "/" ? "/" : normalized_prefix;
-
     const cache_options = {
       etag: options.etag,
       lastModified: options.lastModified,
@@ -347,27 +484,38 @@ export class Router {
 
       const content_type = options.contentType ?? ext_content_type(full_path);
       const relative_to_project = full_path.slice(project_root.length + 1);
-
       await res.sendFile(relative_to_project, content_type, cache_options);
     };
 
-    this.addHandler("GET", index_route, async (_req, res) => {
-      const req_any = _req as OxarionRequest<any>;
-      await serve_handler(req_any, res);
+    this.addHandler("GET", index_route as any, async (_req, res) => {
+      await serve_handler(_req as OxarionRequest<any>, res);
     });
-    this.addHandler("HEAD", index_route, async (_req, res) => {
-      const req_any = _req as OxarionRequest<any>;
-      await serve_handler(req_any, res);
+    this.addHandler("HEAD", index_route as any, async (_req, res) => {
+      await serve_handler(_req as OxarionRequest<any>, res);
     });
-
-    this.addHandler("GET", catch_all_route, serve_handler);
-    this.addHandler("HEAD", catch_all_route, serve_handler);
+    this.addHandler("GET", catch_all_route as any, serve_handler as any);
+    this.addHandler("HEAD", catch_all_route as any, serve_handler as any);
   }
 
-  /**
-   * Serves a generated OpenAPI JSON spec for all registered HTTP routes.
-   * The spec is generated on first request and cached in-memory.
-   */
+  serveOx() {
+    if (this.shared.ox_runtime_registered) return ox_runtime_path;
+    this.shared.ox_runtime_registered = true;
+
+    this.addHandler("GET", "/__oxarion/ox.js", (_req, res) => {
+      return res
+        .setHeader("Content-Type", "application/javascript; charset=utf-8")
+        .setHeader("Cache-Control", "no-cache, max-age=0, must-revalidate")
+        .send(ox_runtime_js);
+    });
+    this.addHandler("GET", ox_runtime_path as any, (_req, res) => {
+      return res
+        .setHeader("Content-Type", "application/javascript; charset=utf-8")
+        .setHeader("Cache-Control", "public, max-age=31536000, immutable")
+        .send(ox_runtime_js);
+    });
+    return ox_runtime_path;
+  }
+
   serveOpenApi(spec_path: string, options: ServeOpenApiOptions) {
     if (typeof spec_path !== "string" || !spec_path)
       throw new TypeError(
@@ -380,14 +528,15 @@ export class Router {
     if (typeof options !== "object" || options === null)
       throw new TypeError("[Oxarion] serveOpenApi: options must be an object");
 
+    const full_path = this.resolve_path(spec_path);
     const exclude_endpoint = options.excludeEndpointFromSpec ?? true;
     let cached_spec: Record<string, unknown> | null = null;
 
-    this.addHandler("GET", spec_path, async (_req, _res) => {
+    this.addHandler("GET", full_path as any, async () => {
       if (!cached_spec) {
         const routes = this.dump_routes().filter((r) => {
           if (!exclude_endpoint) return true;
-          return r.path !== spec_path;
+          return r.path !== full_path;
         });
 
         cached_spec = generate_openapi_spec(routes, {
@@ -400,45 +549,6 @@ export class Router {
     });
   }
 
-  /**
-   * Injects all routes from a RoutesWrapper under a given base path.
-   * @param base - The base path to prefix to all injected routes.
-   * @param wrapper - The RoutesWrapper instance containing routes to inject.
-   * @throws If base is not a string or wrapper is not a valid RoutesWrapper.
-   */
-  injectWrapper(base: string, wrapper: RoutesWrapper) {
-    if (typeof base !== "string")
-      throw new TypeError("[Oxarion] injectWrapper: base must be a string");
-    if (
-      typeof wrapper !== "object" ||
-      wrapper === null ||
-      typeof wrapper[symbl_get_routes] !== "function"
-    )
-      throw new TypeError(
-        "[Oxarion] injectWrapper: wrapper must be a RoutesWrapper",
-      );
-
-    const base_clean = base.replace(/\/$/, "");
-    const routes = wrapper[symbl_get_routes]();
-
-    let i = routes.length;
-    while (i--) {
-      const { method, path, handler } = routes[i];
-      this.addHandler(
-        method,
-        `${base_clean}/${path.replace(/^\//, "")}`,
-        handler,
-      );
-    }
-  }
-
-  /**
-   * Applies a middleware function to routes matching a base path.
-   * @param base - The base path to match (must start with "/").
-   * @param middleware_fn - The middleware function to apply.
-   * @param allRoutes - If true, applies to all routes; otherwise, only those starting with base.
-   * @throws If base is not a string, does not start with "/", or middleware_fn is not a function.
-   */
   middleware(base: string, middleware_fn: MiddlewareFn, allRoutes = false) {
     if (typeof base !== "string")
       throw new TypeError("[Oxarion] middleware: base must be a string");
@@ -451,11 +561,12 @@ export class Router {
         `[Oxarion] middleware: base must start with "/", received: "${base}"`,
       );
 
-    let i = this.routes.length;
+    const full_base = allRoutes ? "/" : this.resolve_path(base);
+    let i = this.shared.routes.length;
     while (i--) {
-      const route = this.routes[i];
+      const route = this.shared.routes[i];
       const path = route.path;
-      if (!allRoutes && !path.startsWith(base)) continue;
+      if (!allRoutes && !path.startsWith(full_base)) continue;
 
       const current_handler = route.handler;
       route.handler = async (req, res) => {
@@ -469,13 +580,6 @@ export class Router {
     }
   }
 
-  /**
-   * Applies a chain of middleware functions to routes matching a base path.
-   * @param base - The base path to match (must start with "/").
-   * @param middlewares - An array of middleware functions to apply in order.
-   * @param allRoutes - If true, applies to all routes; otherwise, only those starting with base.
-   * @throws If base is not a string, does not start with "/", or middlewares is not an array of functions.
-   */
   multiMiddleware(
     base: string,
     middlewares: MiddlewareFn[],
@@ -495,11 +599,12 @@ export class Router {
         `[Oxarion] multiMiddleware: base must start with "/", received: "${base}"`,
       );
 
-    let i = this.routes.length;
+    const full_base = allRoutes ? "/" : this.resolve_path(base);
+    let i = this.shared.routes.length;
     while (i--) {
-      const route = this.routes[i];
+      const route = this.shared.routes[i];
       const path = route.path;
-      if (!allRoutes && !path.startsWith(base)) continue;
+      if (!allRoutes && !path.startsWith(full_base)) continue;
 
       const current_handler = route.handler;
       route.handler = (req, res) =>
@@ -507,15 +612,9 @@ export class Router {
     }
   }
 
-  /**
-   * Creates a route group with shared base path and optional middleware chain.
-   * @param base - The group base path (must start with "/").
-   * @param callback - Receives a scoped router that auto-prefixes routes.
-   * @param middlewares - Optional middleware chain applied to all group routes.
-   */
   group(
     base: string,
-    callback: (router: OxarionRouter) => void,
+    callback: (router: OxarionRouter<TServices>) => void,
     middlewares: MiddlewareFn[] = [],
   ) {
     if (typeof base !== "string")
@@ -534,22 +633,40 @@ export class Router {
         `[Oxarion] group: base must start with "/", received: "${base}"`,
       );
 
-    callback(this.create_group_router(this.clean_base_path(base), middlewares));
+    const full_base = this.join_paths(
+      this.current_base(),
+      this.clean_base_path(base),
+    );
+    const full_chain =
+      this.scope.middlewares.length && middlewares.length
+        ? this.scope.middlewares.concat(middlewares)
+        : this.scope.middlewares.length
+          ? this.scope.middlewares.slice()
+          : middlewares.slice();
+
+    callback(
+      this.create_child_router<TServices>(
+        full_base,
+        full_chain,
+        create_service_container(this.scope.services),
+        create_route_hooks<TServices>(this.scope.hooks),
+      ),
+    );
   }
 
   finalize_routes() {
-    let n = this.routes.length;
+    let n = this.shared.routes.length;
     while (n > 1) {
       let new_n = 0;
       let i = 1;
       while (i < n) {
-        const a = this.routes[i - 1];
-        const b = this.routes[i];
+        const a = this.shared.routes[i - 1];
+        const b = this.shared.routes[i];
         if (
           (!a.isStatic && b.isStatic) ||
           (a.isStatic === b.isStatic && a.segments.length < b.segments.length)
         ) {
-          [this.routes[i - 1], this.routes[i]] = [b, a];
+          [this.shared.routes[i - 1], this.shared.routes[i]] = [b, a];
           new_n = i;
         }
         i++;
@@ -563,20 +680,19 @@ export class Router {
     pathname: string,
   ): [Route, Record<string, string | string[]>] | null {
     const cache_key = `${method}:${pathname}`;
-
-    const cached = this.match_cache.get(cache_key);
+    const cached = this.shared.match_cache.get(cache_key);
     if (cached) return cached;
 
-    const static_route = this.static_routes.get(cache_key);
+    const static_route = this.shared.static_routes.get(cache_key);
     if (static_route) {
       const result: [Route, Record<string, string>] = [static_route, {}];
-      this.match_cache.set(cache_key, result);
+      this.shared.match_cache.set(cache_key, result);
       return result;
     }
 
     const url_segments: string[] = [];
-    let i = 1,
-      seg_start = 1;
+    let i = 1;
+    let seg_start = 1;
     while (i <= pathname.length) {
       if (i === pathname.length || pathname[i] === "/") {
         if (i > seg_start) url_segments.push(pathname.slice(seg_start, i));
@@ -586,9 +702,8 @@ export class Router {
     }
 
     let r = 0;
-    while (r < this.routes.length) {
-      const route = this.routes[r++];
-
+    while (r < this.shared.routes.length) {
+      const route = this.shared.routes[r++];
       const segs = route.segments;
       const has_catch_all = segs.some((s) => s.startsWith("[..."));
 
@@ -606,7 +721,8 @@ export class Router {
           if (seg.startsWith("[...")) {
             params[seg.slice(4, -1)] = url_segments.slice(url_i);
             break;
-          } else params[seg.slice(1, -1)] = url_segments[url_i];
+          }
+          params[seg.slice(1, -1)] = url_segments[url_i];
         } else if (seg !== url_segments[url_i]) {
           matched = false;
           break;
@@ -619,7 +735,7 @@ export class Router {
           route,
           params,
         ];
-        this.match_cache.set(cache_key, result);
+        this.shared.match_cache.set(cache_key, result);
         return result;
       }
     }
@@ -631,42 +747,26 @@ export class Router {
     return this.match(method, parse_url_path(url));
   }
 
-  dump_routes(): {
-    method: Method;
-    path: string;
-    handler: Handler;
-    openapi?: OpenApiRouteDefinition;
-  }[] {
-    let i = this.routes.length;
-    const result = new Array(i);
-
-    while (i--) {
-      const r = this.routes[i];
-      result[i] = {
-        method: r.method,
-        path: r.path,
-        handler: r.handler,
-        openapi: r.openapi,
-      };
-    }
-
+  dump_routes(): Route[] {
+    let i = this.shared.routes.length;
+    const result = new Array<Route>(i);
+    while (i--) result[i] = this.shared.routes[i];
     return result;
   }
 
   is_ws_route(path: string): boolean {
-    return this.ws_routes.has(path);
+    return this.shared.ws_routes.has(path);
   }
 
   has_route(method: Method, path: string): boolean {
     if (typeof path !== "string" || path[0] !== "/") return false;
 
-    let i = this.routes.length;
+    let i = this.shared.routes.length;
     while (i--) {
-      const route = this.routes[i];
+      const route = this.shared.routes[i];
       if (route.method !== method) continue;
       if (route.path === path) return true;
     }
-
     return false;
   }
 
@@ -679,27 +779,27 @@ export class Router {
       );
 
     let removed = 0;
-    let i = this.routes.length;
-
+    let i = this.shared.routes.length;
     while (i--) {
-      const route = this.routes[i];
+      const route = this.shared.routes[i];
       if (route.method !== method) continue;
       if (route.path !== path) continue;
-
-      this.routes.splice(i, 1);
+      this.shared.routes.splice(i, 1);
       removed++;
     }
 
     if (removed) {
-      this.static_routes.delete(`${method}:${path}`);
-      this.match_cache.clear();
+      this.shared.static_routes.delete(`${method}:${path}`);
+      this.shared.match_cache.clear();
     }
     return removed;
   }
 
   cleanup() {
-    this.match_cache.clear();
-    this.static_routes.clear();
-    this.routes.length = 0;
+    this.shared.match_cache.clear();
+    this.shared.static_routes.clear();
+    this.shared.ws_routes.clear();
+    this.shared.routes.length = 0;
+    this.shared.pending_tasks.length = 0;
   }
 }

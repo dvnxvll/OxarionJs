@@ -55,10 +55,10 @@ await Oxarion.start({
 
 ## Typed JSON Dispatcher
 
-Use `ws_dispatcher()` to route incoming JSON messages by `type`
+Use `WebSocket.dispatcher()` to route incoming JSON messages by `type`
 
 ```ts
-import Oxarion, { ws_dispatcher } from "oxarionjs"
+import Oxarion, { WebSocket } from "oxarionjs"
 
 await Oxarion.start({
   port: 3000,
@@ -68,7 +68,7 @@ await Oxarion.start({
   wsHandler: (watcher) => {
     watcher.path(
       "/ws",
-      ws_dispatcher({
+      WebSocket.dispatcher({
         handlers: {
           ping: async (ctx) => {
             ctx.ws.send("pong")
@@ -86,7 +86,7 @@ Pass `middlewares` so they run before the dispatcher
 Middleware can override `ctx.json` so the dispatcher uses it for `type`
 
 ```ts
-import Oxarion, { ws_dispatcher } from "oxarionjs"
+import Oxarion, { WebSocket } from "oxarionjs"
 
 await Oxarion.start({
   port: 3000,
@@ -96,7 +96,7 @@ await Oxarion.start({
   wsHandler: (watcher) => {
     watcher.path(
       "/ws",
-      ws_dispatcher({
+      WebSocket.dispatcher({
         middlewares: [
           async (ctx, next) => {
             ctx.json = { type: "ping", payload: { forced: true } }

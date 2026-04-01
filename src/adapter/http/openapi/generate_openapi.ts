@@ -1,10 +1,10 @@
-import type { Method } from "../types";
+import type { Method } from "../../../types";
 
 import type {
   OpenApiOptions,
   OpenApiParameter,
   OpenApiRouteDefinition,
-} from "../types";
+} from "../../../types";
 
 function path_to_openapi_template(path: string): {
   template: string;

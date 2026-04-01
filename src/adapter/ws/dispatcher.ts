@@ -2,8 +2,8 @@ import type {
   WSHandler,
   WSMessageContext,
   WsDispatcherOptions,
-} from "../types";
-import { apply_ws_message_middleware } from "./ws_message_middleware";
+} from "../../types";
+import { apply_ws_message_middleware } from "./message_middleware";
 
 const text_decoder = new TextDecoder();
 
@@ -45,7 +45,7 @@ export function ws_dispatcher(options: WsDispatcherOptions): WSHandler {
             inner_ctx.json = parse(inner_ctx.message_text);
           }
 
-          const json = inner_ctx.json;
+          const json = inner_ctx.json as any;
           const type = get_type(json);
           if (!type) {
             await onUnknown(inner_ctx);

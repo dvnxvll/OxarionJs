@@ -76,7 +76,7 @@ Middleware.securityHeaders({
 
 ### session
 
-Session is in-memory and meant for production-compatible demos and small deployments
+Session uses the built-in memory store by default. For production, pass a custom `store`.
 
 ```ts
 Middleware.session({
@@ -84,6 +84,64 @@ Middleware.session({
   ttlMs: 7 * 24 * 60 * 60 * 1000,
   httpOnly: true,
   rolling: true,
+  store: my_store,
+})
+```
+
+Default memory store helper:
+
+```ts
+const store = Middleware.createMemorySessionStore()
+```
+
+Built-in Redis store helper:
+
+```ts
+const store = Middleware.createRedisSessionStore({
+  url: "redis://127.0.0.1:6379",
+  prefix: "oxarion:sess:",
+})
+
+Middleware.session({
+  cookieName: "oxarion_session",
+  store,
+  secure: true,
+  sameSite: "lax",
+})
+```
+
+For production:
+- use a durable store instead of the default memory store
+- set `secure: true` behind HTTPS
+- keep `httpOnly: true`
+- prefer an explicit cookie name and path
+
+### csrf
+
+`Middleware.csrf()` requires `Middleware.session()` to run before it.
+
+For `ox-*` requests, the Ox runtime sends the CSRF token automatically from:
+- `<meta name="ox-csrf" content="...">`
+- or the `oxarion_csrf` cookie
+
+```ts
+router.multiMiddleware(
+  "/",
+  [Middleware.session(), Middleware.csrf()],
+  true,
+)
+```
+
+Custom options:
+
+```ts
+Middleware.csrf({
+  sessionKey: "__oxarion_csrf",
+  cookieName: "oxarion_csrf",
+  fieldName: "_csrf",
+  path: "/",
+  sameSite: "lax",
+  secure: true,
 })
 ```
 

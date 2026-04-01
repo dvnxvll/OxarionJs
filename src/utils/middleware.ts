@@ -1,18 +1,15 @@
 import type { MiddlewareFn } from "../types";
-import type { OxarionRequest } from "../handler/request";
-import type { OxarionResponse } from "../handler/response";
+import type { OxarionRequest } from "../adapter/http/request";
+import type { OxarionResponse } from "../adapter/http/response";
 import type { HandlerResult } from "../types";
 
 function compose_middleware(
   middleware: MiddlewareFn[],
   final_handler: (
     req: OxarionRequest<any>,
-    res: OxarionResponse
-  ) => Promise<HandlerResult> | HandlerResult
-): (
-  req: OxarionRequest<any>,
-  res: OxarionResponse
-) => Promise<HandlerResult> {
+    res: OxarionResponse,
+  ) => Promise<HandlerResult> | HandlerResult,
+): (req: OxarionRequest<any>, res: OxarionResponse) => Promise<HandlerResult> {
   return async (req, res) => {
     let i = -1;
 

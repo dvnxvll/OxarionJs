@@ -1,23 +1,58 @@
-# Version 1.0.0
-- First Release
+# Version 1.4.0
+- Added pluggable `SessionStore` support to `Middleware.session()` and exposed `Middleware.createMemorySessionStore()` as the default in-memory backend helper
+- Added `Middleware.createRedisSessionStore()` for Bun-native Redis-backed production session storage
+- Added `Middleware.csrf()` with session-backed tokens, automatic `req.getCsrfToken()` access, and Ox runtime header propagation for mutating `ox-*` requests
+- Added hashed Ox runtime asset versioning so `router.serveOx()` returns an immutable `/__oxarion/ox.<hash>.js` path while keeping `/__oxarion/ox.js` as a stable alias
+- Added browser E2E coverage for the session-backed Ox counter flow and unit coverage for custom session stores, CSRF protection, and hashed runtime serving
+- Added a dedicated `benchmarks/run-ssr-runtime-benchmark.ts` harness and `benchmarks/OxRuntimeResults.md` report for SSR pages, fragments, and the hashed Ox runtime asset
+- Added a gated Docker-backed Redis integration test and extended the browser smoke flow to validate hashed runtime cache headers and CSRF token exposure
+- Extended the SSR/runtime benchmark harness with a stateful session + CSRF protected fragment mutation endpoint
+- Added `docs/production_deployment.md` with production guidance for Redis sessions, CSRF ordering, cookie settings, and hashed runtime asset usage
+- Optimized static `OxarionResponse.text()`, `.json()`, and `.html()` to skip `Headers` allocation when no custom init headers are provided
+- Optimized `OxarionResponse` instance creation by lazily allocating response headers only when they are actually used
+- Optimized `OxarionRequest.getQueries()` to cache parsed query parameters per request
+- Optimized adapter request handling to reuse the parsed pathname instead of reparsing it during route matching
+- Added support for returning instance response helpers like `return res.json(...)`, `return res.text(...)`, and `return res.html(...)` from handlers
+- Updated docs to make `return res.json(...)` and other instance return helpers official API usage
+- Added `Oxarion.create()` app instances with `app.start()`, `app.stop()`, `app.request()`, and `app.getRouter()`
+- Added `router.mount()` as a clearer alias for `injectWrapper()`
+- Added scoped service registration with `router.provide()` and request access via `req.getService()` / `req.hasService()`
+- Added lifecycle hooks with `router.hook()` for `onRequest`, `preHandler`, `onSend`, `onResponse`, and `onError`
+- Added async plugin registration with `router.register()`
+- Added response streaming helpers `res.stream()` and `res.sse()`
+- Added cached SSR template rendering with `res.render()`, `res.renderFragment()`, `app.render()`, and `app.renderFragment()`
+- Added optional Ox dynamic HTML runtime via `router.serveOx()` and `/__oxarion/ox.js` with `ox-get`, `ox-post`, `ox-put`, `ox-delete`, `ox-target`, `ox-swap`, and `ox-trigger`
+- Expanded the Ox dynamic HTML runtime with `ox-confirm`, `ox-include`, response swap overrides, and `window.Ox.apply()` / `window.Ox.swap()` helpers for SSE or manual DOM updates
+- Refactored dynamic HTML placement around `ox-anchor`, `ox-place`, and `ox-mode`, while keeping `ox-target` and `ox-swap` as low-level compatibility fallbacks
+- Refactored HTTP internals to share one request executor between Bun server fetch handling and `app.request()`
+- Grouped helper exports under `OpenAPI.*` and `WebSocket.*` namespaces
+- Added JSDoc coverage for the public type surface in `src/types.ts` to improve editor hints and API discoverability
+- Updated `docs/route_injector.md` to document `router.mount()` as the preferred wrapper mounting API
+- Added a one-time deprecation warning for `router.injectWrapper()` and marked it deprecated in the type surface ahead of `1.5.x`
+- Added dedicated docs for SSR templates and dynamic HTML runtime behavior
 
-# Version 1.0.1
-- Removed pages dir from projects
-- Added WebSocket example
+# Version 1.3.1
+- Optimized `Router` with O(1) static route lookup and LRU cache for dynamic matches
+- Optimized `OxarionRequest` cookie parsing, query parsing, and header iteration
+- Optimized `ParsedFormData` to avoid unnecessary array allocations
+- Optimized `urlencoded` middleware to avoid string concatenation in loops
+- Optimized `generate_openapi_spec` to reduce loop nesting and object allocations
+- Fixed `process.cwd()` caching in Router
+- Refactored duplicate path parsing logic in Router
+- Removed unused `route_path_from_segments` method from Router
 
-# Version 1.0.2
-- Added new example (middleware)
-- Changed new URL() to parseURLPath in adapter
-
-# Version 1.1.0
-- Set debugRoutes default to false
-- Added update announcer (can be disabled with `checkLatestVersion: false`)
-- Added Bun version checker
-- Added example usage of RoutesWrapper classes
-- Changed the parseURLPath logic
-- Changed tsup to Bun native bundler
-- Changed sendPage message when the page is mismatch
-- Changed sendFile message when the file is mismatch
+# Version 1.3.0
+- Added production cookie helpers and an in-memory session middleware
+- Added built-in `Middleware.rateLimit()` and `Middleware.securityHeaders()`
+- Added request body validation middleware (`Middleware.validateJson`, `Middleware.validateUrlencoded`)
+- Added OpenAPI v3 spec generation and `router.serveOpenApi()` endpoint
+- Added `router.serveStatic()` for directory-based static assets with traversal protection
+- Added per-route OpenAPI request/response schema metadata (`router.addHandlerOpenApi`)
+- Added WebSocket message middleware helpers and a typed JSON message dispatcher (`ws_dispatcher`)
+- OpenAPI generator now includes `requestBody` and per-status response `content` schemas
+- Upgraded `res.sendFile()` to stream files and support conditional requests via `ETag` and `Last-Modified`
+- Updated 'README.md'
+- Added Route Injector docs for modular route organization with `RoutesWrapper` and `injectWrapper`
 
 # Version 1.2.0
 - Added type-safe for wsHandler adapter
@@ -43,25 +78,23 @@
 - Changed `parseURLPath` to `parse_url_path`
 - Changed `middlewareChain` to `multiMiddleware`
 
-# Version 1.3.0
-- Added production cookie helpers and an in-memory session middleware
-- Added built-in `Middleware.rateLimit()` and `Middleware.securityHeaders()`
-- Added request body validation middleware (`Middleware.validateJson`, `Middleware.validateUrlencoded`)
-- Added OpenAPI v3 spec generation and `router.serveOpenApi()` endpoint
-- Added `router.serveStatic()` for directory-based static assets with traversal protection
-- Added per-route OpenAPI request/response schema metadata (`router.addHandlerOpenApi`)
-- Added WebSocket message middleware helpers and a typed JSON message dispatcher (`ws_dispatcher`)
-- OpenAPI generator now includes `requestBody` and per-status response `content` schemas
-- Upgraded `res.sendFile()` to stream files and support conditional requests via `ETag` and `Last-Modified`
-- Updated 'README.md'
-- Added Route Injector docs for modular route organization with `RoutesWrapper` and `injectWrapper`
+# Version 1.1.0
+- Set debugRoutes default to false
+- Added update announcer (can be disabled with `checkLatestVersion: false`)
+- Added Bun version checker
+- Added example usage of RoutesWrapper classes
+- Changed the parseURLPath logic
+- Changed tsup to Bun native bundler
+- Changed sendPage message when the page is mismatch
+- Changed sendFile message when the file is mismatch
 
-# Version 1.3.1
-- Optimized `Router` with O(1) static route lookup and LRU cache for dynamic matches
-- Optimized `OxarionRequest` cookie parsing, query parsing, and header iteration
-- Optimized `ParsedFormData` to avoid unnecessary array allocations
-- Optimized `urlencoded` middleware to avoid string concatenation in loops
-- Optimized `generate_openapi_spec` to reduce loop nesting and object allocations
-- Fixed `process.cwd()` caching in Router
-- Refactored duplicate path parsing logic in Router
-- Removed unused `route_path_from_segments` method from Router
+# Version 1.0.2
+- Added new example (middleware)
+- Changed new URL() to parseURLPath in adapter
+
+# Version 1.0.1
+- Removed pages dir from projects
+- Added WebSocket example
+
+# Version 1.0.0
+- First Release

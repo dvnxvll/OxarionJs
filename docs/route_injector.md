@@ -20,9 +20,9 @@ const user_routes = new RoutesWrapper().inject((router) => {
 })
 ```
 
-## injectWrapper
+## mount
 
-Mount the wrapped routes under a base path using `injectWrapper`
+Mount the wrapped routes under a base path using `mount`
 
 ```ts
 import Oxarion from "oxarionjs"
@@ -30,7 +30,7 @@ import Oxarion from "oxarionjs"
 await Oxarion.start({
   port: 3000,
   httpHandler: (router) => {
-    router.injectWrapper("/users", user_routes)
+    router.mount("/users", user_routes)
   },
 })
 ```
@@ -38,6 +38,8 @@ await Oxarion.start({
 Routes are mounted with the base path prefix:
 - `/profile` becomes `/users/profile`
 - Middleware on `/users` applies to all injected routes
+
+`router.injectWrapper()` still works as a compatibility alias, but it is deprecated and will be removed in `1.5.x`. Use `router.mount()` instead.
 
 ## Multiple Feature Modules
 
@@ -82,8 +84,8 @@ import { post_routes } from "./routes/posts"
 await Oxarion.start({
   port: 3000,
   httpHandler: (router) => {
-    router.injectWrapper("/auth", auth_routes)
-    router.injectWrapper("/posts", post_routes)
+    router.mount("/auth", auth_routes)
+    router.mount("/posts", post_routes)
   },
 })
 ```
@@ -102,7 +104,7 @@ const admin_routes = new RoutesWrapper().inject((router) => {
 })
 
 router.group("/admin", (admin) => {
-  admin.injectWrapper("/", admin_routes)
+  admin.mount("/", admin_routes)
 }, [Middleware.cors()])
 ```
 
@@ -118,7 +120,7 @@ const api_v1_routes = new RoutesWrapper().inject((router) => {
 })
 
 router.group("/api", (api) => {
-  api.injectWrapper("/v1", api_v1_routes)
+  api.mount("/v1", api_v1_routes)
 })
 ```
 

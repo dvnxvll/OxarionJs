@@ -42,18 +42,15 @@ Each exported method must receive `req` and `res`
 
 ```ts
 // dyn/test/api.ts
-import {
-  OxarionResponse,
-  type DynamicRouteHandler,
-} from "oxarionjs"
+import type { DynamicRouteHandler } from "oxarionjs"
 
 export const GET: DynamicRouteHandler = async (req, res) => {
-  return OxarionResponse.json({ path: req.url() })
+  return res.json({ path: req.url() })
 }
 
 export const POST: DynamicRouteHandler = async (req, res) => {
   const payload = await req.json()
-  return OxarionResponse.json({ payload }, { status: 201 })
+  return res.json({ payload }, { status: 201 })
 }
 ```
 
@@ -62,21 +59,23 @@ Static class style
 ```ts
 // dyn/test/api.ts
 import {
-  OxarionResponse,
   type OxarionRequest,
+  type OxarionResponse,
 } from "oxarionjs"
 
 export default class TestApi {
-  static async GET(req: OxarionRequest, _res: OxarionResponse) {
-    return OxarionResponse.json({ path: req.url() })
+  static async GET(req: OxarionRequest, res: OxarionResponse) {
+    return res.json({ path: req.url() })
   }
 
-  static async POST(req: OxarionRequest, _res: OxarionResponse) {
+  static async POST(req: OxarionRequest, res: OxarionResponse) {
     const payload = await req.json()
-    return OxarionResponse.json({ payload }, { status: 201 })
+    return res.json({ payload }, { status: 201 })
   }
 }
 ```
+
+You can still return native `Response` or `OxarionResponse.*(...)` if you prefer
 
 You can also export a named class when there is no default class export
 

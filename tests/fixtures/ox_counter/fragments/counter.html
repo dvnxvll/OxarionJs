@@ -1,0 +1,23 @@
+<section class="counter-shell">
+  <p>Count</p>
+  <strong>{ox.count}</strong>
+  <div class="actions">
+    <button
+      class="primary"
+      type="button"
+      ox-post="/fragments/counter/increment"
+      ox-place="counter"
+    >
+      Count
+    </button>
+    <button
+      class="secondary"
+      type="button"
+      ox-post="/fragments/counter/reset"
+      ox-place="counter"
+      ox-confirm="Reset the counter back to zero?"
+    >
+      Reset
+    </button>
+  </div>
+</section>
